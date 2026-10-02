@@ -11,6 +11,7 @@ import * as ts from 'topojson-server';
 import polylabel from 'polylabel';
 import { check, Site, Story, Group, Page, Markers, Battles, Images, Zone, Route, Themes } from './schema.mjs';
 import { alikePairs, describe } from './palette.mjs';
+import { loadCatalogues, translator } from './i18n.mjs';
 
 // PKG is this package. The content project comes in as the root of each build.
 const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -19,7 +20,8 @@ const REPO = JSON.parse(fs.readFileSync(path.join(PKG, 'package.json'), 'utf8'))
 const COMMON = fs.readFileSync(path.join(PKG, 'src', 'common.js'), 'utf8').replace('/*__REPO__*/', REPO);
 const APP = fs.readFileSync(path.join(PKG, 'src', 'app.html'), 'utf8').replace('/*__COMMON__*/', COMMON);
 const INDEX = fs.readFileSync(path.join(PKG, 'src', 'index.html'), 'utf8').replace('/*__COMMON__*/', COMMON);
-const UI = yaml.load(fs.readFileSync(path.join(PKG, 'src', 'ui.yaml'), 'utf8'));
+const UI_DIR = path.join(PKG, 'src', 'i18n');
+const UI = Object.fromEntries(fs.readdirSync(UI_DIR).filter(f => f.endsWith('.yaml')).map(f => [f.replace(/\.yaml$/, ''), yaml.load(fs.readFileSync(path.join(UI_DIR, f), 'utf8'))]));
 // Natural Earth countries, parsed on the first build so that importing the package stays cheap
 let worldFeatures = null;
 const world = () => { if (!worldFeatures) { const w = JSON.parse(fs.readFileSync(require.resolve('world-atlas/countries-10m.json'))); worldFeatures = tc.feature(w, w.objects.countries).features; } return worldFeatures; };
@@ -42,16 +44,18 @@ const difference = (a, b) => turf.difference(turf.featureCollection([a, b]));
 const idOf = name => name.replace(/^\d+-/, '');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// A translatable field, expanded to one string per story language.
-function tr(value, langs, where) {
-  if (typeof value === 'string') return Object.fromEntries(langs.map(l => [l, value]));
-  for (const l of langs) if (value[l] == null) fail(where, `no "${l}" text`);
-  return Object.fromEntries(langs.map(l => [l, value[l]]));
-}
+const emptyText = langs => Object.fromEntries(langs.map(l => [l, '']));
 // A when value with the missing parts rounded down for from and up for to.
 const whenEdge = (s, isEnd) => { const [y, m, d] = s.split('-'); return `${y}-${m ?? (isEnd ? '12' : '01')}-${d ?? (isEnd ? '31' : '01')}`; };
-const themeList = (themes, langs) => Object.entries(themes).map(([id, t]) => ({ id, name: tr(t.name ?? id, langs, `theme ${id} name`) }));
-const uiFor = langs => { for (const l of langs) if (!UI[l]) fail('src/ui.yaml', `no strings for "${l}"`); return Object.fromEntries(langs.map(l => [l, UI[l]])); };
+// Interface strings for a language: the package file, else English, with the project's i18n/ui/<lang>.yaml laid over it.
+function uiFor(langs, root, log) {
+  return Object.fromEntries(langs.map(l => {
+    const override = path.join(root, 'i18n', 'ui', l + '.yaml');
+    if (!UI[l] && !exists(override)) log(`  warning: no interface strings for "${l}", showing English; add i18n/ui/${l}.yaml`);
+    return [l, { ...(UI[l] ?? UI.en), ...(exists(override) ? yaml.load(fs.readFileSync(override, 'utf8')) : {}) }];
+  }));
+}
+const themeList = (themes, ui, langs) => Object.entries(themes).map(([id, t]) => ({ id, name: Object.fromEntries(langs.map(l => [l, ui[l].themes?.[id] ?? t.name?.[l] ?? t.name?.en ?? id])) }));
 
 // The content project of one build: its folders, its logger, and readers that name files relative to it.
 function project(root, log) {
@@ -92,7 +96,11 @@ function buildStory(p, storyDir, site) {
   const where = rel(storyDir);
   const story = readYaml(path.join(storyDir, 'story.yaml'), Story);
   const langs = story.languages;
-  const ui = uiFor(langs);
+  const defaultLang = story.default_language ?? langs[0];
+  const ui = uiFor(langs, root, log);
+  // strings: the default language inline, the others from i18n/<lang>.yaml catalogues
+  const { tr: T, entries, report } = translator({ langs, defaultLang, catalogues: loadCatalogues(path.join(storyDir, 'i18n'), langs, p.loadYaml), where: `${where}/i18n`, fail });
+  const { tr: siteT } = translator({ langs, defaultLang: site.default_language ?? defaultLang, catalogues: loadCatalogues(path.join(root, 'i18n'), langs, p.loadYaml), where: 'i18n', fail });
   if (story.theme && !site.themes[story.theme]) fail(where, `unknown theme "${story.theme}"`);
   const out = path.join(p.dist, story.id);
   fs.mkdirSync(path.join(out, 'images'), { recursive: true });
@@ -127,7 +135,7 @@ function buildStory(p, storyDir, site) {
       const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
       const biggest = polys.map(c => turf.polygon(c)).sort((a, b) => turf.area(b) - turf.area(a))[0];
       const [x, y] = polylabel(biggest.geometry.coordinates, 0.01);
-      const text = story.labels.names[f.properties.name] ? tr(story.labels.names[f.properties.name], langs, `${where} labels ${f.properties.name}`) : Object.fromEntries(langs.map(l => [l, f.properties.name]));
+      const text = story.labels.names[f.properties.name] ? T(story.labels.names[f.properties.name], `labels.${f.properties.name}`) : Object.fromEntries(langs.map(l => [l, f.properties.name]));
       return { type: 'Feature', properties: { ...text, rank: -Math.round(km2(f)) }, geometry: { type: 'Point', coordinates: [+x.toFixed(3), +y.toFixed(3)] } };
     });
   }
@@ -137,7 +145,7 @@ function buildStory(p, storyDir, site) {
     const full = path.join(dir, name), id = idOf(name);
     if (exists(path.join(full, 'page.yaml'))) return { type: 'page', id, dir: full };
     const g = exists(path.join(full, 'group.yaml')) ? readYaml(path.join(full, 'group.yaml'), Group) : {};
-    return { type: 'group', id, title: tr(g.title ?? id, langs, `${rel(full)}/group.yaml title`), children: walk(full) };
+    return { type: 'group', id, title: T(g.title ?? id, `groups.${id}.title`), children: walk(full) };
   });
   const tree = walk(path.join(storyDir, 'pages'));
   const pageDirs = [];
@@ -157,18 +165,18 @@ function buildStory(p, storyDir, site) {
         const parts = feat.properties.clip.map(n => countries.find(f => f.properties.name === n) || fail(rel(file), `clip country "${n}" is not in the story's countries`));
         clip = parts.length > 1 ? turf.union(turf.featureCollection(parts)) : parts[0];
       }
-      define(rawZones, id, { id, family: feat.properties.family, name: tr(feat.properties.name, langs, `${rel(file)} name`), geometry: feat.geometry, clip }, rel(file), 'zone');
+      define(rawZones, id, { id, family: feat.properties.family, name: T(feat.properties.name, `zones.${id}.name`), geometry: feat.geometry, clip }, rel(file), 'zone');
     }
     for (const f of listFiles(path.join(dir, 'routes'), '.geojson')) {
       const file = path.join(dir, 'routes', f), feat = readJson(file, Route), id = feat.properties.id ?? idOf(f.replace('.geojson', ''));
-      define(routes, id, { id, name: tr(feat.properties.name, langs, `${rel(file)} name`), style: feat.properties.style, coordinates: feat.geometry.coordinates }, rel(file), 'route');
+      define(routes, id, { id, name: T(feat.properties.name, `routes.${id}.name`), style: feat.properties.style, coordinates: feat.geometry.coordinates }, rel(file), 'route');
     }
     const markerFile = path.join(dir, 'markers.yaml');
     if (exists(markerFile)) {
       for (const [id, m] of Object.entries(readYaml(markerFile, Markers))) {
         if (m.color && !story.families[m.color]) fail(rel(markerFile), `marker "${id}" uses unknown family "${m.color}"`);
         define(markers, id, { id, lnglat: m.lnglat, icon: LEGACY_ICONS[m.icon] ?? m.icon, color: m.color ?? null, image: m.image ?? null,
-          label: tr(m.label, langs, `${rel(markerFile)} ${id} label`), note: tr(m.note, langs, `${rel(markerFile)} ${id} note`) }, rel(markerFile), 'marker');
+          label: T(m.label, `markers.${id}.label`), note: m.note ? T(m.note, `markers.${id}.note`) : emptyText(langs) }, rel(markerFile), 'marker');
       }
     }
     const battleFile = path.join(dir, 'battles.yaml');
@@ -177,10 +185,11 @@ function buildStory(p, storyDir, site) {
         const at = `${rel(battleFile)} ${id}`;
         const sides = b.sides.map((s, i) => {
           if (s.color && !/^#/.test(s.color) && !story.families[s.color]) fail(at, `side ${i + 1} uses unknown family "${s.color}"`);
-          return { name: tr(s.name, langs, `${at} side name`), color: s.color ?? null, commanders: s.commanders.map(c => tr(c, langs, `${at} commander`)),
-            strength: s.strength ? tr(s.strength, langs, `${at} strength`) : null, casualties: s.casualties ? tr(s.casualties, langs, `${at} casualties`) : null };
+          const k = `battles.${id}.sides.${i}`;
+          return { name: T(s.name, `${k}.name`), color: s.color ?? null, commanders: s.commanders.map((c, j) => T(c, `${k}.commanders.${j}`)),
+            strength: s.strength ? T(s.strength, `${k}.strength`) : null, casualties: s.casualties ? T(s.casualties, `${k}.casualties`) : null };
         });
-        define(battles, id, { id, lnglat: b.lnglat, name: tr(b.name, langs, `${at} name`), date: tr(b.date, langs, `${at} date`), result: b.result ? tr(b.result, langs, `${at} result`) : null,
+        define(battles, id, { id, lnglat: b.lnglat, name: T(b.name, `battles.${id}.name`), date: T(b.date, `battles.${id}.date`), result: b.result ? T(b.result, `battles.${id}.result`) : null,
           sides, images: b.images, source: b.source ?? null, front: b.front ?? null }, rel(battleFile), 'battle');
       }
     }
@@ -191,7 +200,7 @@ function buildStory(p, storyDir, site) {
       if (!exists(src)) fail(rel(imageFile), `image "${id}" file ${im.file} is missing`);
       const name = id + path.extname(im.file);
       fs.copyFileSync(src, path.join(out, 'images', name));
-      define(images, id, { id, src: 'images/' + name, caption: tr(im.caption, langs, `${rel(imageFile)} image ${id} caption`), credit: tr(im.credit ?? '', langs, `${rel(imageFile)} image ${id} credit`) }, rel(imageFile), 'image');
+      define(images, id, { id, src: 'images/' + name, caption: T(im.caption, `images.${id}.caption`), credit: im.credit ? T(im.credit, `images.${id}.credit`, { shared: true }) : emptyText(langs) }, rel(imageFile), 'image');
     }
   }
   for (const m of Object.values(markers)) if (m.image && !images[m.image]) fail(where, `marker "${m.id}" uses unknown image "${m.image}"`);
@@ -245,7 +254,7 @@ function buildStory(p, storyDir, site) {
     return `<figure><img src="${esc(im.src)}" alt="${esc(im.caption[lang])}" data-img="${esc(id)}"><figcaption>${esc(im.caption[lang])}<small>${esc(im.credit[lang])}</small></figcaption></figure>`;
   };
   const pages = pageDirs.map(dir => {
-    const file = path.join(dir, 'page.yaml'), at = rel(file);
+    const file = path.join(dir, 'page.yaml'), at = rel(file), pid = idOf(path.basename(dir));
     const p = readYaml(file, Page);
     for (const z of p.zones) if (!zones[z]) fail(at, `unknown zone "${z}"`);
     for (const r of p.routes) if (!routes[r]) fail(at, `unknown route "${r}"`);
@@ -264,8 +273,9 @@ function buildStory(p, storyDir, site) {
       });
       html[lang] = marked.parse(md);
     }
-    const sources = Object.fromEntries(langs.map(l => [l, p.sources.map(s => tr(s, langs, `${at} sources`)[l])]));
-    return { id: idOf(path.basename(dir)), dir: rel(dir), when, date: tr(p.date, langs, `${at} date`), title: tr(p.title, langs, `${at} title`),
+    const sourceTexts = p.sources.map((s, i) => T(s, `pages.${pid}.sources.${i}`, { shared: true }));
+    const sources = Object.fromEntries(langs.map(l => [l, sourceTexts.map(s => s[l])]));
+    return { id: pid, dir: rel(dir), when, date: T(p.date, `pages.${pid}.date`), title: T(p.title, `pages.${pid}.title`),
       bbox: p.bbox, zones: p.zones, routes: p.routes, markers: p.markers, battle: p.battle ?? null, emblem: p.emblem ? emblemFor(root, p.emblem, `${at} emblem`) : null, html, sources };
   });
   for (let i = 1; i < pages.length; i++) {
@@ -296,10 +306,10 @@ function buildStory(p, storyDir, site) {
 
   // --- bundle and page ---
   const bundle = {
-    id: story.id, title: tr(story.title, langs, `${where} title`), languages: langs, defaultLanguage: story.default_language ?? langs[0],
+    id: story.id, title: T(story.title, 'story.title'), languages: langs, defaultLanguage: defaultLang,
     extent: story.extent, ui, families: story.families,
-    site: { title: tr(site.title, langs, 'site.yaml title') },
-    themes: themeList(site.themes, langs), defaultTheme: story.theme ?? site.theme,
+    site: { title: siteT(site.title, 'site.title') },
+    themes: themeList(site.themes, ui, langs), defaultTheme: story.theme ?? site.theme,
     topo, land: { type: 'Feature', properties: {}, geometry: land.geometry }, hill, labels,
     zones: Object.fromEntries(Object.values(zones).map(z => [z.id, { family: z.family, name: z.name, geometry: turf.truncate(z.feature, { precision: 4 }).geometry }])),
     routes, markers, battles, images, icons, pages: pages.map(({ dir, ...p }) => p), tree: navTree(tree),
@@ -315,28 +325,43 @@ function buildStory(p, storyDir, site) {
   // card for the site index; span is story.span, else the years from the pages' when fields, else the first page's date
   const dated = pages.filter(p => p.when);
   const years = dated.length ? [...new Set([dated[0].when.from.slice(0, 4), dated[dated.length - 1].when.to.slice(0, 4)])].join(' – ') : null;
-  const span = story.span ? tr(story.span, langs, `${where} span`) : Object.fromEntries(langs.map(l => [l, years ?? pages[0].date[l]]));
-  return { id: story.id, title: bundle.title, summary: story.summary ? tr(story.summary, langs, `${where} summary`) : {}, span, languages: langs, pages: pages.length, cover };
+  const span = story.span ? T(story.span, 'story.span') : Object.fromEntries(langs.map(l => [l, years ?? pages[0].date[l]]));
+  const summary = story.summary ? T(story.summary, 'story.summary') : {};
+  // translation coverage per language; --strict turns a gap into an error
+  for (const [lang, r] of Object.entries(report())) {
+    log(`  ${lang}: ${r.total - r.missing.length} of ${r.total} strings translated${r.missing.length ? `, ${r.missing.length} missing (harita i18n ${lang})` : ''}`);
+    if (p.strict && r.missing.length) fail(where, `${lang}: ${r.missing.length} strings missing, first: ${r.missing.slice(0, 8).join(', ')}`);
+  }
+  return { id: story.id, title: bundle.title, summary, span, languages: langs, pages: pages.length, cover, i18n: [...entries.values()] };
 }
 
 // The site index. site.yaml is optional: the folder name, alphabetical order and the cool theme stand in.
 function buildIndex(p, cards, site) {
   const langs = site.languages ?? [...new Set(cards.flatMap(c => c.languages))];
+  const defaultLang = site.default_language ?? langs[0];
   const order = site.stories ?? cards.map(c => c.id);
   for (const id of order) if (!cards.find(c => c.id === id)) fail('site.yaml', `unknown story "${id}"`);
+  const { tr: T, entries, report } = translator({ langs, defaultLang, catalogues: loadCatalogues(path.join(p.root, 'i18n'), langs, p.loadYaml), where: 'i18n', fail });
+  const ui = uiFor(langs, p.root, p.log);
   const data = {
-    title: tr(site.title, langs, 'site.yaml title'), intro: site.intro ? tr(site.intro, langs, 'site.yaml intro') : {},
-    languages: langs, defaultLanguage: site.default_language ?? langs[0], ui: uiFor(langs),
-    stories: order.map(id => cards.find(c => c.id === id)),
-    themes: themeList(site.themes, langs), defaultTheme: site.theme,
+    title: T(site.title, 'site.title'), intro: site.intro ? T(site.intro, 'site.intro') : {},
+    languages: langs, defaultLanguage: defaultLang, ui,
+    stories: order.map(id => { const { i18n, ...card } = cards.find(c => c.id === id); return card; }),
+    themes: themeList(site.themes, ui, langs), defaultTheme: site.theme,
   };
+  for (const [lang, r] of Object.entries(report())) {
+    if (r.missing.length) p.log(`site ${lang}: ${r.missing.length} of ${r.total} strings missing (harita i18n ${lang})`);
+    if (p.strict && r.missing.length) fail('site.yaml', `${lang}: missing ${r.missing.join(', ')}`);
+  }
+  p.siteEntries = [...entries.values()];
   fs.writeFileSync(path.join(p.dist, 'index.html'), INDEX.replace('const SITE = null;', 'const SITE = ' + JSON.stringify(data) + ';').replace('/*__THEMES_CSS__*/', themeCss(site.themes, site.theme)));
   p.log(`wrote dist/index.html (${data.stories.length} stories)`);
 }
 
 // Build every story under root/content into root/dist. Returns the dist folder and one card per story.
-export function build({ root = process.cwd(), log = console.log } = {}) {
+export function build({ root = process.cwd(), log = console.log, strict = false } = {}) {
   const p = project(root, log);
+  p.strict = strict;
   const stories = listDirs(p.content).filter(d => exists(path.join(p.content, d, 'story.yaml')));
   if (!stories.length) fail('content/', 'no story.yaml found, run this from a content project');
   const siteFile = path.join(root, 'site.yaml');
@@ -347,5 +372,5 @@ export function build({ root = process.cwd(), log = console.log } = {}) {
   const cards = [];
   for (const s of stories) { log(`story ${s}`); cards.push(buildStory(p, path.join(p.content, s), site)); }
   buildIndex(p, cards, site);
-  return { dist: p.dist, stories: cards };
+  return { dist: p.dist, stories: cards.map(({ i18n, ...card }) => card), i18n: { stories: Object.fromEntries(cards.map(c => [c.id, c.i18n])), site: p.siteEntries } };
 }

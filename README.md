@@ -138,6 +138,35 @@ theme: cool                         # cool, mono, navy, parchment, sepia; reader
 Without the file the main page takes the project folder name as its title and lists the stories
 alphabetically. The story page's backlink shows the same title.
 
+### Languages
+
+Content strings are English inline. Every other language lives in one catalogue per story,
+`content/<story>/i18n/<lang>.yaml`, and one for the site, `i18n/<lang>.yaml`, keyed by the stable ids the
+content already has:
+
+```yaml
+# Occupation, and the landing at Samsun
+pages.occupation.title: "İşgal ve Samsun’a çıkış"
+markers.samsun.note: "Mustafa Kemal karaya çıkar, 19 Mayıs 1919"
+zones.british.name: "İtilaf (İngiliz) işgali, İstanbul ve Boğazlar"
+battles.sakarya.sides.0.name: "Türkiye Büyük Millet Meclisi"
+images.izmir-1919.caption: "Yunan evzon askerleri İzmir’de, 15 Mayıs 1919"
+```
+
+Long texts stay in `text/<lang>.md`. To add a language: list it in `story.yaml`, write the markdown
+files, then run
+
+```
+harita i18n <lang>
+```
+
+which writes or refreshes the catalogues with every key, the English source as a comment above each, and
+existing translations kept. Keys that no longer exist move to a commented block at the end. A missing
+value falls back to English; the build prints the coverage per language, and `harita build --strict`
+fails on any gap. Citations and photo credits sit in their own section of the catalogue and are never
+counted as missing. Interface strings ship with harita in `src/i18n/<lang>.yaml`; a project adds or
+overrides a language with `i18n/ui/<lang>.yaml`.
+
 ### Themes
 
 A theme is a set of colour tokens with a light and a dark variant, following the reader's system
@@ -215,8 +244,9 @@ sources:
   - "Andrew Mango, Atatürk (1999), ch. 10."
 ```
 
-A translatable field takes either one string for every language or an object with one entry per
-language.
+A translatable field is written once, in the story's default language. Other languages come from
+catalogues, see Languages below. An object with one entry per language still works and wins for the
+languages it names.
 
 `when` is machine readable: a year, a year-month, or a full date, with `to` optional. The build fails
 when a page starts before the page preceding it in folder order, naming both folders. Pages that share a

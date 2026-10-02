@@ -14,7 +14,7 @@ const run = (cwd, ...args) => spawnSync(process.execPath, [BIN, ...args], { cwd,
 test('no command prints usage and exits 2', () => {
   const r = run(os.tmpdir());
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /^usage: harita build \| harita dev/);
+  assert.match(r.stderr, /^usage: harita build/);
 });
 
 test('build in a folder without content exits 1 with the error alone', () => {

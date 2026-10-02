@@ -1,6 +1,6 @@
 {
   "name": "@openhistoryatlas/harita",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Interactive timelines on a map: one standalone HTML page per story, built from a content folder",
   "keywords": [
     "map",

@@ -525,9 +525,12 @@ function mapMarkers(page, redraw){
 // ---------- panes ----------
 const navEl = $('nav'), story = $('story'), legend = $('legend');
 // phones show either the map or the text; every step lands on the map, with a dot on Text until it is read
+// the text opens at the top the first time it is shown for a page; going back and forth on the same page keeps the place
+let textPage = -1;
 function setTab(tab){
   document.body.dataset.tab = tab;
   $('tab-map').setAttribute('aria-selected', tab === 'map'); $('tab-text').setAttribute('aria-selected', tab === 'text');
+  if (tab === 'text' && textPage !== cur) { textPage = cur; story.scrollTop = 0; requestAnimationFrame(() => { story.scrollTop = 0; }); }
 }
 function renderChrome(){
   $('tab-map').textContent = T().tab_map; $('tab-text').textContent = T().tab_text;

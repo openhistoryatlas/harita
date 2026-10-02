@@ -27,6 +27,10 @@ header a.back::before{content:"";width:0;height:0;border:5px solid transparent;b
 header a.back:hover{color:var(--ink)}
 header a.back:focus-visible{outline:2px solid var(--accent)}
 header .note{color:var(--ink-2);font-size:12px}
+header a.src{color:var(--ink-2);font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--rule);border-radius:4px;padding:4px 8px}
+header a.src svg{width:13px;height:13px}
+header a.src:hover{color:var(--ink)}
+header a.src:focus-visible{outline:2px solid var(--accent)}
 select#lang,select#theme{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:5px 8px;font:inherit;cursor:pointer}
 select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--accent)}
 .stepctl{margin-left:auto;display:flex;gap:6px;align-items:center}
@@ -178,6 +182,7 @@ aside.story figcaption small{display:block;font-size:11px;color:var(--ink-2);opa
   <select id="lang"></select>
   <select id="theme"></select>
   <span class="note" id="hint"></span>
+  <a class="src" id="src" target="_blank" rel="noopener" hidden></a>
   <div class="stepctl">
     <button id="prev"></button>
     <span id="stepno" style="font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:12px"></span>
@@ -452,6 +457,7 @@ function renderChrome(){
   $('back').href = siteLink(lang);
   $('toast-close').textContent = T().close;
   $('hint').textContent = T().hint;
+  if (B.site.source) { $('src').href = B.site.source; $('src').innerHTML = `${ICONS['external-link']} ${esc(T().story_source)}`; $('src').hidden = false; }
   $('credit').innerHTML = credit(T());
   $('prev').textContent = T().prev;
   $('next').textContent = T().next;

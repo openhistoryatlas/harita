@@ -133,6 +133,8 @@ languages: [en, tr]
 default_language: en
 stories: [turkiye-1919-1923]        # order on the main page, else alphabetical
 theme: cool                         # cool, mono, navy, parchment, sepia; readers can switch
+repository: https://github.com/openhistoryatlas/atlas   # optional: Contribute link on the main page,
+branch: main                                            # and a "Source on GitHub" link on every story
 ```
 
 Without the file the main page takes the project folder name as its title and lists the stories

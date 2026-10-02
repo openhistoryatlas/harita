@@ -19,6 +19,9 @@ h1,h2{font-family:var(--display);font-weight:500;margin:0;text-wrap:balance}
 header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--rule);padding-bottom:10px}
 header h1{font-size:26px}
 header .controls{margin-left:auto;display:flex;gap:8px}
+header a.contribute{color:var(--ink-2);font-size:13px;text-decoration:none;border:1px solid var(--rule);border-radius:4px;padding:5px 10px;display:inline-flex;align-items:center}
+header a.contribute:hover{color:var(--ink)}
+header a.contribute:focus-visible{outline:2px solid var(--accent)}
 select#lang,select#theme{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:5px 8px;font:inherit;cursor:pointer}
 select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--accent)}
 .intro{max-width:62ch;color:var(--ink-2);margin:0}
@@ -62,7 +65,7 @@ select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--acc
 <div class="wrap">
   <header>
     <h1 id="title"></h1>
-    <div class="controls"><select id="lang"></select><select id="theme"></select></div>
+    <div class="controls"><a class="contribute" id="contribute" target="_blank" rel="noopener" hidden></a><select id="lang"></select><select id="theme"></select></div>
   </header>
   <p class="intro" id="intro"></p>
   <div class="listbar"><button type="button" id="toggle-all"></button></div>
@@ -85,6 +88,7 @@ function render(){
   document.title = L(S.title);
   $('title').textContent = L(S.title);
   $('intro').textContent = L(S.intro);
+  if (S.repository) { $('contribute').href = S.repository; $('contribute').textContent = S.ui[lang].contribute; $('contribute').hidden = false; }
   fillSelect($('lang'), S.languages.map(l => ({ value: l, text: S.ui[l].name ?? l })), lang, S.ui[lang].language);
   fillSelect($('theme'), S.themes.map(t => ({ value: t.id, text: pick(t.name, lang, S.defaultLanguage, t.id) })), palette, S.ui[lang].theme);
   $('toggle-all').textContent = toggleLabel(S.ui[lang], allOpen());

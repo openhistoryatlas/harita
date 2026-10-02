@@ -308,7 +308,7 @@ function buildStory(p, storyDir, site) {
   const bundle = {
     id: story.id, title: T(story.title, 'story.title'), languages: langs, defaultLanguage: defaultLang,
     extent: story.extent, ui, families: story.families,
-    site: { title: siteT(site.title, 'site.title') },
+    site: { title: siteT(site.title, 'site.title'), source: site.repository ? `${site.repository.replace(/\/$/, '')}/tree/${site.branch}/content/${story.id}` : null },
     themes: themeList(site.themes, ui, langs), defaultTheme: story.theme ?? site.theme,
     topo, land: { type: 'Feature', properties: {}, geometry: land.geometry }, hill, labels,
     zones: Object.fromEntries(Object.values(zones).map(z => [z.id, { family: z.family, name: z.name, geometry: turf.truncate(z.feature, { precision: 4 }).geometry }])),
@@ -345,7 +345,7 @@ function buildIndex(p, cards, site) {
   const ui = uiFor(langs, p.root, p.log);
   const data = {
     title: T(site.title, 'site.title'), intro: site.intro ? T(site.intro, 'site.intro') : {},
-    languages: langs, defaultLanguage: defaultLang, ui,
+    languages: langs, defaultLanguage: defaultLang, ui, repository: site.repository ?? null,
     stories: order.map(id => { const { i18n, ...card } = cards.find(c => c.id === id); return card; }),
     themes: themeList(site.themes, ui, langs), defaultTheme: site.theme,
   };

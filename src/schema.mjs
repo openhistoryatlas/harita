@@ -26,6 +26,8 @@ export const Site = z.object({
   stories: z.array(Id).optional(),
   theme: Id.optional(),
   themes: Themes.optional(),
+  repository: z.string().url().optional(), // the content repository: a Contribute link on the main page, a source link per story
+  branch: z.string().default('main'),
 }).strict();
 
 export const Story = z.object({

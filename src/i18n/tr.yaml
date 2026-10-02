@@ -20,6 +20,12 @@ source: Kaynak
 collapse_all: Tümünü kapat
 fallback: Bu hikâye “{lang}” dilinde yok. {name} gösteriliyor.
 missing_page: “{id}” adlı bir sayfa yok. İlk sayfa gösteriliyor.
+read_more: Devamını oku
+hide: Gizle
+legend: Lejant
+tab_map: Harita
+tab_text: Metin
+contents: İçindekiler
 contribute: Katkıda bulun
 story_source: GitHub’da kaynağı
 generated_by: '{harita} ile oluşturuldu'

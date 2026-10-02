@@ -205,7 +205,7 @@ function buildStory(p, storyDir, site) {
   }
   for (const m of Object.values(markers)) if (m.image && !images[m.image]) fail(where, `marker "${m.id}" uses unknown image "${m.image}"`);
   for (const b of Object.values(battles)) for (const im of b.images) if (!images[im]) fail(where, `battle "${b.id}" uses unknown image "${im}"`);
-  const iconNames = new Set(['swords', 'x', 'external-link', 'chevron-left', 'chevron-right', ...Object.values(markers).map(m => m.icon)]);
+  const iconNames = new Set(['swords', 'x', 'external-link', 'chevron-left', 'chevron-right', 'list', ...Object.values(markers).map(m => m.icon)]);
   const icons = Object.fromEntries([...iconNames].map(n => [n, iconSvg(n, where)]));
 
   // --- clean zones: round corners, clip to land, trim by family priority, validate ---

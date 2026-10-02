@@ -44,6 +44,8 @@ header a.src:focus-visible{outline:2px solid var(--accent)}
 .ctl select{flex:1;min-height:max(2.857rem,2.85rem);background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:0 .571rem;font:inherit;cursor:pointer}
 .app{display:grid;grid-template-columns:clamp(220px,15vw,300px) minmax(0,1fr) clamp(320px,23vw,520px);gap:1.143rem;flex:1;min-height:0}
 nav.pages{overflow:auto;min-height:0}
+.where,nav.pages .sheet-head,.ctl .tabs{display:none}
+.peek,.legend-btn{display:none}
 aside.story{display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0}
 aside.story .text{overflow:auto;min-height:0;padding-right:.286rem}
 nav.pages .toggle-all{display:block;width:auto;margin:0 0 .429rem auto;background:none;border:1px solid var(--rule);border-radius:4px;color:var(--ink-2);font:inherit;font-size:.786rem;padding:3px .571rem;cursor:pointer}
@@ -168,20 +170,60 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
 .maplibregl-marker{position:absolute;top:0;left:0;will-change:transform}
 .maplibregl-ctrl-bottom-right,.maplibregl-ctrl-bottom-left{display:none}
 @media (max-width:900px){
-  .app{grid-template-columns:1fr;grid-template-rows:auto 60vh auto;min-height:auto}
-  body{padding-bottom:9.429rem} /* room for the fixed bar */
-  aside.story{display:block}
-  aside.story .text{overflow:visible;padding-right:0}
+  /* one screen, no page scroll: header, where-you-are line, then the map or the text, then the bar */
+  html,body{height:100%}
+  body{height:100dvh;overflow:hidden;padding-bottom:calc(8.6rem + env(safe-area-inset-bottom, 0px))}
+  header .note{display:none}
+  .app{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);min-height:0}
+  .stage{grid-row:2;grid-column:1;min-height:0}
+  aside.story{display:contents}
+  aside.story .text{grid-row:2;grid-column:1;z-index:2;background:var(--paper);overflow:auto;padding:.571rem .143rem 1.143rem}
+  body[data-tab="map"] aside.story .text{display:none}
+  /* in the text view the map's own overlays step aside; they sit above the text in the stacking order otherwise */
+  body[data-tab="text"] :is(.peek,.legend-btn,.legend,.credit,.maplibregl-popup){display:none}
+  /* the peek card: the first two lines of the page's text over the bottom of the map; a tap opens the text */
+  .peek{display:block;position:absolute;left:.571rem;right:.571rem;bottom:.571rem;z-index:3;background:var(--panel);border:1px solid var(--rule);border-radius:8px;
+    box-shadow:0 2px 10px rgba(0,0,0,.25);padding:.714rem 2.857rem .714rem .857rem;cursor:pointer}
+  .peek[hidden]{display:none}
+  .peek p{margin:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.45}
+  .peek .more{display:inline-block;margin-top:.286rem;color:var(--accent);font-weight:600;font-size:.929rem}
+  .peek .close{position:absolute;top:.286rem;right:.286rem;width:max(44px,3.143rem);height:max(44px,3.143rem);border:0;background:none;color:var(--ink-2);font-size:1.429rem;line-height:1;cursor:pointer}
+  .peek:focus-visible,.peek .close:focus-visible{outline:2px solid var(--accent)}
+  /* the legend folds into a button at the top of the map, and the credit moves up beside it */
+  .legend-btn{display:inline-flex;position:absolute;top:.571rem;left:.571rem;z-index:3;min-height:max(40px,2.857rem);align-items:center;padding:0 .857rem;
+    background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:6px;font:inherit;font-size:.929rem;cursor:pointer}
+  .legend-btn[hidden]{display:none}
+  .legend{top:calc(.571rem + max(40px,2.857rem) + .429rem);bottom:auto;left:.571rem;z-index:3;max-width:calc(100% - 1.143rem)}
+  body:not(.legend-open) .legend{display:none}
+  .credit{top:.571rem;bottom:auto}
+  .lightbox{position:fixed;z-index:30}
+  /* the bar: Prev, the Map | Text switch, Next; then language, page count, theme */
+  .ctl{grid-template-areas:"prev tabs next" "lang no theme";grid-template-columns:1fr auto 1fr}
+  .ctl #prev{grid-area:prev} .ctl #next{grid-area:next} .ctl #stepno{grid-area:no}
+  .ctl .prefs{display:contents} .ctl #lang{grid-area:lang} .ctl #theme{grid-area:theme}
+  .ctl .tabs{grid-area:tabs;display:flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+  .ctl .tabs button{border:0;border-radius:0;min-width:4.6rem;padding:0 .714rem}
+  .ctl .tabs button + button{border-left:1px solid var(--rule)}
+  .ctl .tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper)}
   .ctl{position:fixed;left:0;right:0;bottom:0;z-index:6;padding:.571rem 1.143rem calc(.571rem + env(safe-area-inset-bottom, 0px));border-top:1px solid var(--rule);box-shadow:0 -2px 10px rgba(0,0,0,.12)}
-  /* the chronology becomes one horizontal strip of pages; groups flatten into it, headers and the fold toggle go */
-  nav.pages{display:flex;gap:.286rem;overflow-x:auto;align-items:center;padding-bottom:.286rem}
-  nav.pages details{display:flex;flex:none;gap:.286rem;align-items:center}
-  nav.pages details::details-content{display:flex;gap:.286rem;align-items:center} /* Chrome lays out a details' children in this box */
-  nav.pages summary,nav.pages .toggle-all{display:none}
-  nav.pages button{flex:none;padding:.571rem .857rem;min-height:3.143rem}
-  nav.pages button{width:auto;white-space:nowrap;border-left:0;border-bottom:2px solid transparent}
-  nav.pages button[aria-current="true"]{border-bottom-color:var(--accent)}
-  html,body{height:auto}
+  /* the chronology gives way to one line: where in the story you are, and a button for the full contents */
+  .where{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.143rem .857rem;align-items:center;padding-bottom:.571rem;border-bottom:1px solid var(--rule)}
+  .where .crumbs{grid-column:1;font-size:.786rem;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .where .here{grid-column:1;font-weight:600;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .where .here small{font-weight:400;color:var(--ink-2);margin-right:.429rem;font-variant-numeric:tabular-nums}
+  .where button{grid-column:2;grid-row:1/3;min-height:max(44px,3.143rem);background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:0 .857rem;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:.429rem}
+  .where button svg{width:1.143rem;height:1.143rem}
+  .where button:focus-visible{outline:2px solid var(--accent)}
+  nav.pages{display:none}
+  body.sheet{overflow:hidden}
+  body.sheet nav.pages{display:block;position:fixed;inset:0;z-index:20;background:var(--paper);overflow:auto;
+    padding:calc(.857rem + env(safe-area-inset-top, 0px)) 1.143rem calc(1.143rem + env(safe-area-inset-bottom, 0px))}
+  body.sheet nav.pages .sheet-head{display:flex;align-items:center;justify-content:space-between;gap:.857rem;margin-bottom:.571rem;
+    position:sticky;top:calc(-.857rem - env(safe-area-inset-top, 0px));z-index:1;background:var(--paper);padding-block:.571rem;border-bottom:1px solid var(--rule)} /* title and Close stay put while the list scrolls */
+  nav.pages .sheet-head h2{font-size:1.429rem}
+  nav.pages .sheet-close{width:auto;flex:none;text-align:center;min-height:max(44px,3.143rem);background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:0 .857rem;font:inherit;cursor:pointer}
+  nav.pages button{min-height:max(44px,3.143rem)}
+  .toast{bottom:calc(9.9rem + env(safe-area-inset-bottom, 0px))} /* above the fixed bar */
 }
 @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
 </style>
@@ -196,11 +238,14 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
 </header>
 
 <main class="app">
+  <div class="where" id="where"><div class="crumbs" id="crumbs"></div><div class="here" id="here"></div><button type="button" id="contents"></button></div>
   <nav class="pages" id="nav"></nav>
   <section class="stage">
     <div id="map" class="map"></div>
+    <button type="button" class="legend-btn" id="legend-btn"></button>
     <div class="legend" id="legend"></div>
     <div class="credit" id="credit"></div>
+    <div class="peek" id="peek" role="button" tabindex="0"><p id="peek-text"></p><span class="more" id="peek-more"></span><button type="button" class="close" id="peek-close">×</button></div>
     <div class="lightbox" id="lightbox" hidden>
       <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
       <button type="button" id="lb-close"></button>
@@ -211,6 +256,7 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
     <footer class="ctl">
       <button id="prev" type="button"></button>
       <span id="stepno"></span>
+      <div class="tabs" role="tablist"><button type="button" role="tab" id="tab-map"></button><button type="button" role="tab" id="tab-text"></button></div>
       <button id="next" type="button"></button>
       <div class="prefs"><select id="lang"></select><select id="theme"></select></div>
     </footer>
@@ -331,7 +377,10 @@ let battlePopup = null;
 function openBattle(id){
   const m = ML.map; if (!m) return;
   closeBattle();
-  battlePopup = new maplibregl.Popup({ offset: 30, maxWidth: 'none', focusAfterOpen: false, anchor: 'bottom', closeOnClick: false }).setLngLat(B.battles[id].lnglat).setDOMContent(battleCard(B.battles[id])).addTo(m);
+  const popup = new maplibregl.Popup({ offset: 30, maxWidth: 'none', focusAfterOpen: false, anchor: 'bottom', closeOnClick: false }).setLngLat(B.battles[id].lnglat).setDOMContent(battleCard(B.battles[id])).addTo(m);
+  battlePopup = popup;
+  // the card's own × closes it; that counts as the reader closing it, so the map slides back
+  popup.on('close', () => { if (battlePopup !== popup) return; battlePopup = null; restoreNudge(); });
   // the card sits above the marker; if it still runs past the map's edge, slide the map so it fits
   requestAnimationFrame(() => {
     if (!battlePopup) return;
@@ -339,10 +388,22 @@ function openBattle(id){
     let dx = 0, dy = 0;
     if (r.top < s.top + pad) dy = r.top - (s.top + pad); else if (r.bottom > s.bottom - pad) dy = r.bottom - (s.bottom - pad);
     if (r.left < s.left + pad) dx = r.left - (s.left + pad); else if (r.right > s.right - pad) dx = r.right - (s.right - pad);
-    if (dx || dy) m.panBy([dx, dy], { duration: reduced ? 0 : 400 });
+    if (!dx && !dy) return;
+    // phones remember where the map was, to slide back when the reader closes the card
+    if (matchMedia('(max-width:900px)').matches) ML.beforeNudge = m.getCenter();
+    m.panBy([dx, dy], { duration: reduced ? 0 : 400 });
   });
 }
-function closeBattle(){ if (battlePopup) { battlePopup.remove(); battlePopup = null; } }
+// restore: the reader closed the card, so undo the slide; a page change or a new card closes without it
+function closeBattle(restore = false){
+  const p = battlePopup; if (!p) return;
+  battlePopup = null; p.remove();
+  if (restore) restoreNudge(); else ML.beforeNudge = null;
+}
+function restoreNudge(){
+  const c = ML.beforeNudge; ML.beforeNudge = null;
+  if (c && ML.map) ML.map.easeTo({ center: c, duration: reduced ? 0 : 400 });
+}
 
 let hillCanvas = null;
 const hillReady = new Promise(res => { const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); hillCanvas = c; res(); }; img.onerror = () => res(); img.src = B.hill.src; });
@@ -363,6 +424,7 @@ function mapInit(){
     $('map').innerHTML = '<div class="fail">The map needs WebGL, which this browser did not provide.</div>'; return;
   }
   ML.map = m;
+  m.on('movestart', e => { if (e.originalEvent) ML.beforeNudge = null; });
   m.on('load', async () => {
     await hillReady;
     m.addSource('countries', { type:'geojson', data: countries });
@@ -421,7 +483,7 @@ function mapTheme(){
 }
 function mapApply(page, first){
   const m = ML.map; if (!m || !ML.ready) return;
-  m.fitBounds([[page.bbox[0], page.bbox[1]], [page.bbox[2], page.bbox[3]]], { padding:40, duration: first ? 0 : DUR });
+  m.fitBounds([[page.bbox[0], page.bbox[1]], [page.bbox[2], page.bbox[3]]], { padding: fitPadding(), duration: first ? 0 : DUR });
   for (const id in B.zones) {
     const on = page.zones.includes(id);
     m.setPaintProperty('z-' + id, 'fill-opacity', on ? 0.38 : 0); m.setPaintProperty('zl-' + id, 'line-opacity', on ? 0.9 : 0);
@@ -462,7 +524,13 @@ function mapMarkers(page, redraw){
 
 // ---------- panes ----------
 const navEl = $('nav'), story = $('story'), legend = $('legend');
+// phones show either the map or the text; every step lands on the map, with a dot on Text until it is read
+function setTab(tab){
+  document.body.dataset.tab = tab;
+  $('tab-map').setAttribute('aria-selected', tab === 'map'); $('tab-text').setAttribute('aria-selected', tab === 'text');
+}
 function renderChrome(){
+  $('tab-map').textContent = T().tab_map; $('tab-text').textContent = T().tab_text;
   document.documentElement.lang = lang;
   document.title = L(B.title);
   $('title').textContent = L(B.title);
@@ -486,6 +554,10 @@ const ALL_GROUPS = groupKeys(B.tree);
 const allGroupsOpen = () => ALL_GROUPS.every(k => !closedGroups.has(k));
 function renderNav(reveal = true){
   navEl.innerHTML = '';
+  const head = document.createElement('div'); head.className = 'sheet-head';
+  head.innerHTML = `<h2>${esc(T().contents)}</h2><button type="button" class="sheet-close">${esc(T().close)}</button>`;
+  head.querySelector('button').onclick = closeSheet;
+  navEl.appendChild(head);
   if (ALL_GROUPS.length) {
     const t = document.createElement('button'); t.type = 'button'; t.className = 'toggle-all';
     t.textContent = toggleLabel(T(), allGroupsOpen());
@@ -498,7 +570,7 @@ function renderNav(reveal = true){
       if (n.type === 'page') {
         const p = PAGES[n.index]; const b = document.createElement('button');
         b.style.setProperty('--depth', depth); b.setAttribute('aria-current', n.index === cur ? 'true' : 'false');
-        b.innerHTML = `<span class="d">${esc(L(p.date))}</span>${esc(L(p.title))}`; b.onclick = () => go(n.index, false, false); frag.appendChild(b);
+        b.innerHTML = `<span class="d">${esc(L(p.date))}</span>${esc(L(p.title))}`; b.onclick = () => { closeSheet(); go(n.index, false, false); }; frag.appendChild(b);
       } else {
         const k = key + '/' + n.id; const d = document.createElement('details');
         if (reveal && holds(n, cur)) closedGroups.delete(k);
@@ -512,18 +584,43 @@ function renderNav(reveal = true){
   };
   navEl.appendChild(build(B.tree, 0, ''));
 }
+// phones: the group path to the current page, and the page itself
+const pathTo = (nodes, index) => { for (const n of nodes) { if (n.type === 'page' && n.index === index) return []; if (n.type === 'group') { const r = pathTo(n.children, index); if (r) return [n, ...r]; } } return null; };
+function renderWhere(p){
+  $('crumbs').textContent = (pathTo(B.tree, cur) ?? []).map(g => L(g.title)).join(' › ');
+  $('here').innerHTML = `<small>${esc(L(p.date))}</small>${esc(L(p.title))}`;
+  $('contents').innerHTML = `${ICONS.list} ${esc(T().contents)}`;
+}
+function openSheet(){ document.body.classList.add('sheet'); requestAnimationFrame(() => { const b = navEl.querySelector('button[aria-current="true"]'); if (b) b.scrollIntoView({ block: 'center' }); }); }
+function closeSheet(){ document.body.classList.remove('sheet'); }
+const phone = matchMedia('(max-width:900px)');
+function fitPadding(){
+  const peek = $('peek'), pad = 40;
+  return phone.matches && !peek.hidden ? { top: pad, left: pad, right: pad, bottom: peek.offsetHeight + 24 } : pad;
+}
+function renderPeek(){
+  const first = story.querySelector('p');
+  $('peek-text').textContent = first ? first.textContent : '';
+  $('peek-more').textContent = T().read_more;
+  $('peek-close').setAttribute('aria-label', T().hide);
+  $('peek').hidden = !first;
+  $('legend-btn').textContent = T().legend;
+}
 function renderStory(p){
+  renderWhere(p);
   const sources = p.sources[lang].length ? `<h3>${esc(T().sources)}</h3><ol>${p.sources[lang].map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : '';
   story.innerHTML = `<div class="date">${esc(L(p.date))}</div><h2>${esc(L(p.title))}</h2>${p.html[lang]}${sources}`;
   story.scrollTop = 0;
   legend.innerHTML = p.zones.map(z => `<span><i style="${patternCss(B.zones[z].family)}"></i>${esc(L(B.zones[z].name))}</span>`).join('')
     + p.routes.map(r => `<span><i class="r ${B.routes[r].style}"></i>${esc(L(B.routes[r].name))}</span>`).join('');
   legend.hidden = !legend.innerHTML;
+  $('legend-btn').hidden = legend.hidden;
+  renderPeek();
   $('stepno').textContent = `${cur + 1} / ${PAGES.length}`;
   $('prev').disabled = cur === 0; $('next').disabled = cur === PAGES.length - 1;
 }
 // reveal centres the current page in the chronology; a click in the chronology itself leaves the scroll alone
-function go(i, fromHash, reveal = true){ cur = i; closeImage(); renderNav(); if (reveal) revealCurrent(); renderStory(PAGES[cur]); mapApply(PAGES[cur]); if (!fromHash) writeHash(true); }
+function go(i, fromHash, reveal = true){ cur = i; closeImage(); setTab('map'); document.body.classList.remove('legend-open'); renderNav(); if (reveal) revealCurrent(); renderStory(PAGES[cur]); mapApply(PAGES[cur]); if (!fromHash) writeHash(true); }
 function revealCurrent(){
   const b = navEl.querySelector('button[aria-current="true"]'); if (!b) return;
   const n = navEl.getBoundingClientRect(), r = b.getBoundingClientRect();
@@ -541,10 +638,19 @@ addEventListener('hashchange', () => {
   if (r.page) { const i = pageIndex(r.page); if (i >= 0 && i !== cur) go(i, true); }
 });
 $('toast-close').onclick = () => { $('toast').hidden = true; };
+$('contents').onclick = openSheet;
+$('tab-map').onclick = () => setTab('map');
+$('tab-text').onclick = () => setTab('text');
+setTab('map');
+// the peek card: tap anywhere on it for the text; × hides it until the next page
+$('peek').onclick = () => setTab('text');
+$('peek').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('text'); } };
+$('peek-close').onclick = e => { e.stopPropagation(); $('peek').hidden = true; };
+$('legend-btn').onclick = () => document.body.classList.toggle('legend-open');
 document.addEventListener('click', e => { const t = e.target.closest('[data-img]'); if (t) { e.stopPropagation(); openImage(t.dataset.img); } });
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.matches('[data-img]')) openImage(e.target.dataset.img);
-  if (e.key === 'Escape') { closeImage(); closeBattle(); }
+  if (e.key === 'Escape') { closeImage(); closeBattle(true); closeSheet(); }
   if (e.target.closest('input,textarea,select')) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
     e.preventDefault(); // at either end the key does nothing, rather than scrolling the page or the map

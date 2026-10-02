@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>History Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  /*__FAMILY_CSS__*/
+  --display:"Fraunces",Georgia,"Times New Roman",serif;
+  --body:"Public Sans","Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ /*__FAMILY_CSS_DARK__*/ } }
+:root[data-theme="dark"]{ /*__FAMILY_CSS_DARK__*/ }
+/*__THEMES_CSS__*/
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.5;
+  display:flex;flex-direction:column;gap:12px;padding-inline:16px;padding-block:12px;box-sizing:border-box}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+h1,h2,h3{font-family:var(--display);font-weight:500;margin:0;text-wrap:balance}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--rule);padding-bottom:10px}
+header h1{font-size:22px}
+header a.back{color:var(--ink-2);text-decoration:none;font-size:13px;display:inline-flex;align-items:center;gap:4px}
+header a.back::before{content:"";width:0;height:0;border:5px solid transparent;border-right:6px solid var(--ink-2)}
+header a.back:hover{color:var(--ink)}
+header a.back:focus-visible{outline:2px solid var(--accent)}
+header .note{color:var(--ink-2);font-size:12px}
+select#lang,select#theme{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:5px 8px;font:inherit;cursor:pointer}
+select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--accent)}
+.stepctl{margin-left:auto;display:flex;gap:6px;align-items:center}
+.stepctl button{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:6px 12px;font:inherit;cursor:pointer}
+.stepctl button:disabled{opacity:.4;cursor:default}
+.stepctl button:focus-visible{outline:2px solid var(--accent)}
+.app{display:grid;grid-template-columns:220px minmax(0,1fr) 320px;gap:16px;flex:1;min-height:0}
+nav.pages{overflow:auto;min-height:0}
+nav.pages .toggle-all{display:block;width:auto;margin:0 0 6px auto;background:none;border:1px solid var(--rule);border-radius:4px;color:var(--ink-2);font:inherit;font-size:11px;padding:3px 8px;cursor:pointer}
+nav.pages .toggle-all:hover{color:var(--ink)}
+nav.pages .toggle-all:focus-visible{outline:2px solid var(--accent)}
+nav.pages summary{font-family:var(--display);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);
+  margin:8px 0 2px;padding-left:calc(var(--depth,0)*12px);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px}
+nav.pages summary::before{content:"";width:0;height:0;border:4px solid transparent;border-left:5px solid var(--ink-2);transition:transform .15s}
+nav.pages details[open]>summary::before{transform:rotate(90deg)}
+nav.pages summary:focus-visible{outline:2px solid var(--accent)}
+nav.pages button{display:block;width:100%;text-align:left;background:none;border:0;border-left:2px solid transparent;color:var(--ink);
+  font:inherit;padding:6px 10px 6px calc(10px + var(--depth,0)*12px);cursor:pointer;line-height:1.3}
+nav.pages button .d{display:block;font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+nav.pages button[aria-current="true"]{border-left-color:var(--accent);background:var(--panel)}
+nav.pages button:focus-visible{outline:2px solid var(--accent)}
+.stage{position:relative;min-height:420px;border:1px solid var(--rule);background:var(--sea);overflow:hidden}
+.map{position:absolute;inset:0;width:100%;height:100%}
+.legend{position:absolute;left:10px;bottom:10px;background:var(--panel);border:1px solid var(--rule);padding:8px 10px;font-size:11px;
+  display:grid;gap:4px;max-width:220px}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:14px;height:10px;display:inline-block;border:1px solid var(--ink-2);flex:none}
+.legend .r{width:14px;height:0;border:0;border-top:2px solid var(--route)}
+.legend .r.dashed{border-top-style:dashed}
+.credit{position:absolute;right:10px;bottom:10px;background:var(--panel);border:1px solid var(--rule);padding:3px 8px;font-size:11px;color:var(--ink-2);pointer-events:auto}
+.credit a{color:inherit}
+.fail{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--ink-2)}
+aside.story{overflow:auto;min-height:0;padding-right:4px}
+aside.story .date{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-variant-numeric:tabular-nums}
+aside.story h2{font-size:24px;margin:4px 0 10px;line-height:1.15}
+aside.story p{margin:0 0 10px;max-width:62ch}
+aside.story h3{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin-top:18px;border-top:1px solid var(--rule);padding-top:10px}
+aside.story ol{padding-left:18px;margin:6px 0;color:var(--ink-2);font-size:12px}
+aside.story li{margin-bottom:4px}
+aside.story figure{margin:14px 0;max-width:62ch}
+aside.story figure img{display:block;width:100%;border:1px solid var(--rule);cursor:zoom-in}
+aside.story figcaption{font-size:12px;color:var(--ink-2);margin-top:6px;line-height:1.4}
+aside.story figcaption small{display:block;font-size:11px;color:var(--ink-2);opacity:.8}
+/* markers */
+.mk{display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;transform:translate(0,-50%)}
+.mk .wrap{position:relative;display:flex;flex-direction:column;align-items:center}
+.mk .ic{width:28px;height:28px;border-radius:50%;background:var(--panel);border:2px solid var(--c,var(--accent));color:var(--c,var(--accent));
+  display:grid;place-items:center;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.mk .ic svg{width:16px;height:16px}
+.mk.battle{pointer-events:auto;cursor:pointer}
+.mk.battle .ic{width:38px;height:38px;background:var(--accent);color:var(--paper);border-color:var(--paper);box-shadow:0 1px 5px rgba(0,0,0,.4)}
+.mk.battle .ic svg{width:22px;height:22px}
+.mk.battle b{font-size:13px}
+.mk.battle:hover .ic{transform:scale(1.08)}
+.mk .ph{width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid var(--c,var(--accent));background:var(--panel);
+  box-shadow:0 1px 4px rgba(0,0,0,.35);pointer-events:auto;cursor:zoom-in;display:block}
+.mk .ph:hover{transform:scale(1.08)}
+.mk .ph:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mk .ic.badge{position:absolute;right:-6px;bottom:-2px;width:20px;height:20px;border-width:1.5px;box-shadow:none}
+.mk .ic.badge svg{width:11px;height:11px}
+.mk b{font-family:var(--display);font-weight:700;font-size:12px;color:var(--ink);background:var(--paper);padding:0 4px;border-radius:2px;white-space:nowrap}
+.mk small{font-size:10px;color:var(--ink-2);background:var(--paper);padding:0 4px;border-radius:2px;white-space:nowrap}
+.maplibregl-marker{opacity:0;transition:opacity .6s}
+.maplibregl-marker.in{opacity:1}
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));
+  background:var(--ink);color:var(--paper);padding:10px 14px;border-radius:4px;font-size:13px;display:flex;gap:12px;align-items:center;z-index:9;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.toast button{background:none;border:1px solid var(--paper);color:var(--paper);border-radius:3px;padding:2px 8px;font:inherit;cursor:pointer}
+.toast button:focus-visible{outline:2px solid var(--accent)}
+/* battle card */
+.maplibregl-popup{position:absolute;top:0;left:0;display:flex;will-change:transform;pointer-events:none;z-index:4}
+.maplibregl-popup-anchor-top,.maplibregl-popup-anchor-top-left,.maplibregl-popup-anchor-top-right{flex-direction:column}
+.maplibregl-popup-anchor-bottom,.maplibregl-popup-anchor-bottom-left,.maplibregl-popup-anchor-bottom-right{flex-direction:column-reverse}
+.maplibregl-popup-anchor-left{flex-direction:row}
+.maplibregl-popup-anchor-right{flex-direction:row-reverse}
+.maplibregl-popup-tip{width:0;height:0;border:10px solid transparent;z-index:1;align-self:center}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip,.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,.maplibregl-popup-anchor-top-right .maplibregl-popup-tip{border-top:none;border-bottom-color:var(--panel)}
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip{border-bottom:none;border-top-color:var(--panel)}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip{border-left:none;border-right-color:var(--panel)}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip{border-right:none;border-left-color:var(--panel)}
+.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip{align-self:flex-start;margin-left:14px}
+.maplibregl-popup-anchor-top-right .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip{align-self:flex-end;margin-right:14px}
+.maplibregl-popup-content{position:relative;pointer-events:auto;background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;box-shadow:0 4px 18px rgba(0,0,0,.3);padding:0;width:min(400px,calc(100vw - 48px))}
+.maplibregl-popup-close-button{position:absolute;right:6px;top:6px;width:26px;height:26px;border:0;border-radius:3px;background:none;color:var(--ink-2);font:18px/1 var(--body);cursor:pointer}
+.maplibregl-popup-close-button:hover{color:var(--ink);background:var(--paper-2)}
+.maplibregl-popup-close-button:focus-visible{outline:2px solid var(--accent)}
+.bc{font-size:13px;line-height:1.4;max-height:min(560px,70vh);overflow:auto}
+.bc header{display:flex;gap:10px;align-items:center;padding:12px 36px 10px 14px;border-bottom:1px solid var(--rule)}
+.bc header .ic{flex:none;width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--paper);display:grid;place-items:center}
+.bc header .ic svg{width:18px;height:18px}
+.bc header h4{font-family:var(--display);font-weight:500;font-size:17px;margin:0;line-height:1.2}
+.bc header small{display:block;color:var(--ink-2);font-size:12px}
+.bc .result{padding:8px 14px;border-bottom:1px solid var(--rule);display:flex;gap:8px;align-items:baseline}
+.bc .result b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.bc .sides{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0;border-bottom:1px solid var(--rule)}
+.bc .side{padding:10px 14px;border-left:3px solid var(--c,var(--rule))}
+.bc .side + .side{border-top:0;box-shadow:-1px 0 0 var(--rule)}
+.bc .side h5{margin:0 0 6px;font-size:13px;font-weight:600}
+.bc .side dl{margin:0;display:grid;gap:4px}
+.bc .side dt{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.bc .side dd{margin:0}
+.bc .side ul{margin:0;padding-left:16px}
+.bc .pic{margin:0;border-bottom:1px solid var(--rule)}
+.bc .pic .slide{height:210px;background:var(--paper-2)}
+.bc .pic img{display:block;width:100%;height:100%;object-fit:contain;cursor:zoom-in}
+.bc .pic figcaption{padding:6px 14px;font-size:11px;color:var(--ink-2);line-height:1.3;min-height:2.9em}
+.bc .pic .nav{display:flex;align-items:center;justify-content:center;gap:10px;padding:2px 0 6px;font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.bc .pic .nav button{width:22px;height:22px;border:1px solid var(--rule);border-radius:50%;background:var(--paper);color:var(--ink);display:grid;place-items:center;cursor:pointer;padding:0}
+.bc .pic .nav button svg{width:13px;height:13px}
+.bc .pic .nav button:hover{background:var(--paper-2)}
+.bc .pic .nav button:focus-visible{outline:2px solid var(--accent)}
+.bc footer{display:flex;justify-content:flex-end;padding:8px 14px}
+.bc footer a{color:var(--ink-2);font-size:12px;display:inline-flex;gap:4px;align-items:center;text-decoration:none}
+.bc footer a svg{width:13px;height:13px}
+.bc footer a:hover{color:var(--ink)}
+@media (max-width:640px){ .bc .sides{grid-template-columns:1fr} .bc .side + .side{box-shadow:none;border-top:1px solid var(--rule)} }
+/* lightbox */
+.lightbox{position:absolute;inset:0;background:rgba(20,18,14,.78);display:grid;place-items:center;padding:24px;z-index:5}
+.lightbox figure{margin:0;max-width:min(640px,100%);max-height:100%;display:flex;flex-direction:column;gap:8px}
+.lightbox img{max-width:100%;max-height:70vh;object-fit:contain;border:4px solid var(--panel);background:var(--panel)}
+.lightbox figcaption{color:#efe9da;font-size:13px;line-height:1.4}
+.lightbox figcaption small{display:block;color:#b8b09c;font-size:11px}
+.lightbox button{position:absolute;top:10px;right:10px;background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:4px 10px;font:inherit;cursor:pointer}
+.lightbox button:focus-visible{outline:2px solid var(--accent)}
+/* minimal maplibre css */
+.maplibregl-map{font:12px/20px sans-serif;overflow:hidden;position:relative;-webkit-tap-highlight-color:rgb(0 0 0/0)}
+.maplibregl-canvas{position:absolute;left:0;top:0}
+.maplibregl-canvas-container.maplibregl-interactive{cursor:grab;user-select:none}
+.maplibregl-canvas-container.maplibregl-interactive:active{cursor:grabbing}
+.maplibregl-canvas-container.maplibregl-touch-zoom-rotate .maplibregl-canvas{touch-action:pan-x pan-y}
+.maplibregl-marker{position:absolute;top:0;left:0;will-change:transform}
+.maplibregl-ctrl-bottom-right,.maplibregl-ctrl-bottom-left{display:none}
+@media (max-width:900px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto 60vh auto;min-height:auto}
+  nav.pages{display:flex;gap:4px;overflow-x:auto}
+  nav.pages details{display:contents}
+  nav.pages summary{display:none}
+  nav.pages button{width:auto;white-space:nowrap;border-left:0;border-bottom:2px solid transparent}
+  nav.pages button[aria-current="true"]{border-bottom-color:var(--accent)}
+  html,body{height:auto}
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back" id="back" href="../"></a>
+  <h1 id="title"></h1>
+  <select id="lang"></select>
+  <select id="theme"></select>
+  <span class="note" id="hint"></span>
+  <div class="stepctl">
+    <button id="prev"></button>
+    <span id="stepno" style="font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:12px"></span>
+    <button id="next"></button>
+  </div>
+</header>
+
+<main class="app">
+  <nav class="pages" id="nav"></nav>
+  <section class="stage">
+    <div id="map" class="map"></div>
+    <div class="legend" id="legend"></div>
+    <div class="credit" id="credit"></div>
+    <div class="lightbox" id="lightbox" hidden>
+      <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
+      <button type="button" id="lb-close"></button>
+    </div>
+  </section>
+  <aside class="story" id="story"></aside>
+</main>
+
+<div class="toast" id="toast" role="status" hidden><span id="toast-text"></span><button type="button" id="toast-close"></button></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.24.0/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/7.2.0/turf.min.js"></script>
+<script>
+/*__COMMON__*/
+const BUNDLE = null;
+
+// ---------- state ----------
+const B = BUNDLE;
+const ICONS = B.icons;
+const PAGES = B.pages;
+let cur = 0;
+let lang = pref('lang', B.languages, B.defaultLanguage);
+let palette = pref('palette', B.themes.map(t => t.id), B.defaultTheme);
+document.documentElement.dataset.palette = palette;
+const T = () => B.ui[lang];
+const L = field => pick(field, lang, B.defaultLanguage);
+
+// ---------- routing: #<lang>/<page>, #<page> or #<lang> ----------
+const pageIndex = id => PAGES.findIndex(p => p.id === id);
+function parseHash(){
+  const parts = hashParts();
+  if (!parts.length) return {};
+  if (parts.length === 1) return pageIndex(parts[0]) >= 0 ? { page: parts[0] } : { lang: parts[0] };
+  return { lang: parts[0], page: parts[1] };
+}
+const writeHash = push => setHash(`#${lang}/${PAGES[cur].id}`, push);
+let toastTimer = null;
+function toast(text){
+  $('toast-text').textContent = text; $('toast').hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 8000);
+}
+const notices = [];
+{
+  const r = parseHash();
+  if (r.lang) {
+    if (B.languages.includes(r.lang)) lang = r.lang;
+    else { lang = B.defaultLanguage; notices.push(T().fallback.replace('{lang}', r.lang).replace('{name}', B.ui[lang].name ?? lang)); }
+  }
+  if (r.page) { const i = pageIndex(r.page); if (i >= 0) cur = i; else notices.push(T().missing_page.replace('{id}', r.page)); }
+}
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const colorVar = family => family ? `--z-${family}` : '--accent';
+// A 16 px tile in the family colour, drawn so it repeats without seams: hatch, cross or dots.
+function patternImage(kind, color){
+  const s = 16, c = document.createElement('canvas'); c.width = c.height = s; const g = c.getContext('2d');
+  g.strokeStyle = g.fillStyle = color; g.lineWidth = 2;
+  const line = (x0, y0, x1, y1) => { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
+  if (kind === 'hatch' || kind === 'cross') { line(0, s, s, 0); line(0, s / 2, s / 2, 0); line(s / 2, s, s, s / 2); }
+  if (kind === 'cross') { line(0, 0, s, s); line(s / 2, 0, s, s / 2); line(0, s / 2, s / 2, s); }
+  if (kind === 'dots') for (const [x, y] of [[s / 4, s / 4], [3 * s / 4, 3 * s / 4]]) { g.beginPath(); g.arc(x, y, 2, 0, 7); g.fill(); }
+  return g.getImageData(0, 0, s, s);
+}
+const patternCss = family => {
+  const c = `var(${colorVar(family)})`, p = B.families[family]?.pattern, hatch = a => `repeating-linear-gradient(${a}deg, ${c} 0 1.5px, transparent 1.5px 5px)`;
+  const img = p === 'hatch' ? hatch(45) : p === 'cross' ? `${hatch(45)}, ${hatch(-45)}` : p === 'dots' ? `radial-gradient(${c} 1.2px, transparent 1.5px) 0 0 / 5px 5px` : 'none';
+  return `background:${img}, color-mix(in srgb, ${c} 55%, transparent);border-color:${c}`;
+};
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DUR = reduced ? 0 : 1400;
+
+// ---------- shared helpers ----------
+const countries = topojson.feature(B.topo, B.topo.objects.countries);
+// the theme's land tints, picked per country by the tint index the build assigned
+// Noto Sans glyphs, SIL Open Font License, fetched by range from the Protomaps assets host when a story labels its countries
+const GLYPHS = 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf';
+const landFill = () => { const tints = [...Array(8)].map((_, i) => css(`--land-${i}`).trim()); return ['match', ['get', 'tint'], ...tints.flatMap((c, i) => [i, c]), tints[0]]; };
+const zoneFeature = id => ({ type:'Feature', properties:{ id }, geometry: B.zones[id].geometry });
+const routeFeature = (id, coords) => ({ type:'Feature', properties:{ id }, geometry:{ type:'LineString', coordinates: coords } });
+const sliceRoute = (coords, t) => t <= 0 ? [] : turf.lineSliceAlong(turf.lineString(coords), 0, t * turf.length(turf.lineString(coords))).geometry.coordinates;
+function markerEl(m, battle){
+  const el = document.createElement('div'); el.className = battle ? 'mk battle' : 'mk'; el.style.setProperty('--c', `var(${colorVar(m.color)})`);
+  const im = m.image ? B.images[m.image] : null;
+  const photo = im ? `<img class="ph" src="${esc(im.src)}" alt="${esc(L(im.caption))}" tabindex="0" data-img="${esc(m.image)}"><span class="ic badge">${ICONS[m.icon]}</span>` : `<span class="ic">${ICONS[m.icon]}</span>`;
+  el.innerHTML = `<span class="wrap">${photo}</span><b>${esc(L(m.label))}</b><small>${esc(L(m.note))}</small>`;
+  return el;
+}
+function openImage(id){
+  const im = B.images[id];
+  $('lb-img').src = im.src; $('lb-img').alt = L(im.caption);
+  $('lb-cap').innerHTML = `${esc(L(im.caption))}<small>${esc(L(im.credit))}</small>`;
+  $('lightbox').hidden = false; $('lb-close').focus();
+}
+function closeImage(){ $('lightbox').hidden = true; }
+
+// ---------- battles ----------
+const sideColor = c => !c ? 'var(--rule)' : c.startsWith('#') ? c : `var(--z-${c})`;
+function battleCard(b){
+  const el = document.createElement('div'); el.className = 'bc';
+  const side = s => `<div class="side" style="--c:${sideColor(s.color)}"><h5>${esc(L(s.name))}</h5><dl>
+    ${s.commanders.length ? `<dt>${esc(T().commanders)}</dt><dd><ul>${s.commanders.map(c => `<li>${esc(L(c))}</li>`).join('')}</ul></dd>` : ''}
+    ${s.strength ? `<dt>${esc(T().strength)}</dt><dd>${esc(L(s.strength))}</dd>` : ''}
+    ${s.casualties ? `<dt>${esc(T().casualties)}</dt><dd>${esc(L(s.casualties))}</dd>` : ''}</dl></div>`;
+  const pics = b.images.map(id => B.images[id]);
+  // the caption sits outside the fixed height slide, else it spills under the arrows
+  const pic = i => `<img src="${esc(pics[i].src)}" alt="${esc(L(pics[i].caption))}" data-img="${esc(b.images[i])}">`;
+  const cap = i => esc(L(pics[i].caption));
+  el.innerHTML = `<header><span class="ic">${ICONS.swords}</span><div><h4>${esc(L(b.name))}</h4><small>${esc(L(b.date))}</small></div></header>
+    ${pics.length ? `<figure class="pic"><div class="slide">${pic(0)}</div><figcaption>${cap(0)}</figcaption>${pics.length > 1 ? `<div class="nav"><button type="button" data-dir="-1" aria-label="previous">${ICONS['chevron-left']}</button><span class="n">1 / ${pics.length}</span><button type="button" data-dir="1" aria-label="next">${ICONS['chevron-right']}</button></div>` : ''}</figure>` : ''}
+    ${b.result ? `<div class="result"><b>${esc(T().result)}</b><span>${esc(L(b.result))}</span></div>` : ''}
+    <div class="sides">${b.sides.map(side).join('')}</div>
+    ${b.source ? `<footer><a href="${esc(b.source)}" target="_blank" rel="noopener">${esc(T().source)} ${ICONS['external-link']}</a></footer>` : ''}`;
+  if (pics.length > 1) { // little arrows step through the images without closing the card
+    let i = 0;
+    el.querySelectorAll('.nav button').forEach(btn => btn.onclick = e => { e.stopPropagation(); i = (i + Number(btn.dataset.dir) + pics.length) % pics.length; el.querySelector('.slide').innerHTML = pic(i); el.querySelector('figcaption').innerHTML = cap(i); el.querySelector('.n').textContent = `${i + 1} / ${pics.length}`; });
+  }
+  return el;
+}
+let battlePopup = null;
+function openBattle(id){
+  const m = ML.map; if (!m) return;
+  closeBattle();
+  battlePopup = new maplibregl.Popup({ offset: 30, maxWidth: 'none', focusAfterOpen: false, anchor: 'bottom', closeOnClick: false }).setLngLat(B.battles[id].lnglat).setDOMContent(battleCard(B.battles[id])).addTo(m);
+  // the card sits above the marker; if it still runs past the map's edge, slide the map so it fits
+  requestAnimationFrame(() => {
+    if (!battlePopup) return;
+    const r = battlePopup.getElement().getBoundingClientRect(), s = $('map').getBoundingClientRect(), pad = 12;
+    let dx = 0, dy = 0;
+    if (r.top < s.top + pad) dy = r.top - (s.top + pad); else if (r.bottom > s.bottom - pad) dy = r.bottom - (s.bottom - pad);
+    if (r.left < s.left + pad) dx = r.left - (s.left + pad); else if (r.right > s.right - pad) dx = r.right - (s.right - pad);
+    if (dx || dy) m.panBy([dx, dy], { duration: reduced ? 0 : 400 });
+  });
+}
+function closeBattle(){ if (battlePopup) { battlePopup.remove(); battlePopup = null; } }
+
+let hillCanvas = null;
+const hillReady = new Promise(res => { const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); hillCanvas = c; res(); }; img.onerror = () => res(); img.src = B.hill.src; });
+
+// ---------- map ----------
+const ML = { map:null, ready:false, markers:{}, anim:{}, shown:{} };
+function mapInit(){
+  if (!window.maplibregl) { $('map').innerHTML = '<div class="fail">MapLibre GL did not load from the CDN.</div>'; return; }
+  const [w, s, e, n] = B.extent;
+  let m;
+  try {
+    m = new maplibregl.Map({
+      container:'map', attributionControl:false,
+      style:{ version:8, sources:{}, ...(B.labels ? { glyphs: GLYPHS } : {}), layers:[{ id:'bg', type:'background', paint:{ 'background-color': css('--sea') } }] },
+      bounds:[[w, s], [e, n]], minZoom:3.5, maxZoom:11, dragRotate:false, pitchWithRotate:false
+    });
+  } catch (err) { // no WebGL: keep the text and navigation working without the map
+    $('map').innerHTML = '<div class="fail">The map needs WebGL, which this browser did not provide.</div>'; return;
+  }
+  ML.map = m;
+  m.on('load', async () => {
+    await hillReady;
+    m.addSource('countries', { type:'geojson', data: countries });
+    m.addSource('land', { type:'geojson', data: B.land });
+    m.addLayer({ id:'land', type:'fill', source:'countries', paint:{ 'fill-color': landFill() } });
+    if (hillCanvas) {
+      const hb = B.hill.bbox;
+      m.addSource('hill', { type:'canvas', canvas: hillCanvas, animate:false, coordinates:[[hb.w, hb.n], [hb.e, hb.n], [hb.e, hb.s], [hb.w, hb.s]] });
+      m.addLayer({ id:'hill', type:'raster', source:'hill', paint:{ 'raster-opacity':0.85, 'raster-fade-duration':0 } });
+    }
+    for (const f in B.families) if (B.families[f].pattern) m.addImage('pat-' + f, patternImage(B.families[f].pattern, css(colorVar(f))));
+    for (const id in B.zones) {
+      const f = B.zones[id].family, c = css(colorVar(f));
+      m.addSource('z-' + id, { type:'geojson', data: zoneFeature(id) });
+      m.addLayer({ id:'z-' + id, type:'fill', source:'z-' + id, paint:{ 'fill-color': c, 'fill-opacity':0, 'fill-opacity-transition':{ duration:600 } } });
+      if (B.families[f].pattern) m.addLayer({ id:'zp-' + id, type:'fill', source:'z-' + id, paint:{ 'fill-pattern': 'pat-' + f, 'fill-opacity':0, 'fill-opacity-transition':{ duration:600 } } });
+      m.addLayer({ id:'zl-' + id, type:'line', source:'z-' + id, paint:{ 'line-color': c, 'line-width':1, 'line-opacity':0, 'line-opacity-transition':{ duration:600 } } });
+    }
+    m.addLayer({ id:'borders', type:'line', source:'countries', paint:{ 'line-color': css('--border'), 'line-width':0.8, 'line-dasharray':[2, 2] } });
+    m.addLayer({ id:'land-outline', type:'line', source:'land', paint:{ 'line-color': css('--ink'), 'line-width':1.2 } });
+    for (const id in B.routes) {
+      m.addSource('r-' + id, { type:'geojson', data: routeFeature(id, []) });
+      m.addLayer({ id:'rc-' + id, type:'line', source:'r-' + id, layout:{ 'line-cap':'round', 'line-join':'round' }, paint:{ 'line-color': css('--paper'), 'line-width':5 } });
+      const paint = { 'line-color': css('--route'), 'line-width':2.5 };
+      if (B.routes[id].style === 'dashed') paint['line-dasharray'] = [2, 1.5];
+      m.addLayer({ id:'r-' + id, type:'line', source:'r-' + id, layout:{ 'line-cap':'round', 'line-join':'round' }, paint });
+    }
+    m.addSource('emblem', { type:'geojson', data: { type:'FeatureCollection', features: [] } });
+    m.addLayer({ id:'emblem', type:'fill', source:'emblem', paint:{ 'fill-color': ['get', 'color'], 'fill-opacity': 0.92 } });
+    if (B.labels) { // atlas lettering: small caps in ink-2 with a land coloured halo, larger countries win a collision
+      m.addSource('labels', { type:'geojson', data: { type:'FeatureCollection', features: B.labels } });
+      m.addLayer({ id:'labels', type:'symbol', source:'labels',
+        layout:{ 'text-field': ['get', lang], 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 3.5, 9, 6, 12, 9, 16], 'text-transform': 'uppercase',
+          'text-letter-spacing': 0.18, 'text-max-width': 7, 'text-padding': 12, 'symbol-sort-key': ['get', 'rank'] },
+        paint:{ 'text-color': css('--ink-2'), 'text-halo-color': css('--paper-2'), 'text-halo-width': 1.2, 'text-opacity': 0.85 } });
+    }
+    for (const id in B.battles) {
+      if (!B.battles[id].front) continue;
+      m.addSource('bf-' + id, { type:'geojson', data: routeFeature(id, B.battles[id].front) });
+      m.addLayer({ id:'bf-' + id, type:'line', source:'bf-' + id, layout:{ 'line-cap':'round', 'line-join':'round' }, paint:{ 'line-color': css('--accent'), 'line-width':3, 'line-dasharray':[1, 2], 'line-opacity':0, 'line-opacity-transition':{ duration:600 } } });
+    }
+    ML.ready = true; mapApply(PAGES[cur], true);
+  });
+}
+function mapTheme(){
+  const m = ML.map; if (!m || !ML.ready) return;
+  m.setPaintProperty('bg', 'background-color', css('--sea'));
+  m.setPaintProperty('land', 'fill-color', landFill());
+  if (B.labels) { m.setPaintProperty('labels', 'text-color', css('--ink-2')); m.setPaintProperty('labels', 'text-halo-color', css('--paper-2')); }
+  m.setPaintProperty('borders', 'line-color', css('--border'));
+  m.setPaintProperty('land-outline', 'line-color', css('--ink'));
+  for (const id in B.zones) { const c = css(colorVar(B.zones[id].family)); m.setPaintProperty('z-' + id, 'fill-color', c); m.setPaintProperty('zl-' + id, 'line-color', c); }
+  for (const f in B.families) if (B.families[f].pattern) m.updateImage('pat-' + f, patternImage(B.families[f].pattern, css(colorVar(f))));
+  for (const id in B.routes) { m.setPaintProperty('rc-' + id, 'line-color', css('--paper')); m.setPaintProperty('r-' + id, 'line-color', css('--route')); }
+  for (const id in B.battles) if (B.battles[id].front) m.setPaintProperty('bf-' + id, 'line-color', css('--accent'));
+}
+function mapApply(page, first){
+  const m = ML.map; if (!m || !ML.ready) return;
+  m.fitBounds([[page.bbox[0], page.bbox[1]], [page.bbox[2], page.bbox[3]]], { padding:40, duration: first ? 0 : DUR });
+  for (const id in B.zones) {
+    const on = page.zones.includes(id);
+    m.setPaintProperty('z-' + id, 'fill-opacity', on ? 0.38 : 0); m.setPaintProperty('zl-' + id, 'line-opacity', on ? 0.9 : 0);
+    if (m.getLayer('zp-' + id)) m.setPaintProperty('zp-' + id, 'fill-opacity', on ? 0.7 : 0);
+  }
+  for (const id in B.routes) {
+    const on = page.routes.includes(id); const src = m.getSource('r-' + id); const coords = B.routes[id].coordinates;
+    cancelAnimationFrame(ML.anim[id]);
+    if (!on) { src.setData(routeFeature(id, [])); ML.shown[id] = false; continue; }
+    if (ML.shown[id]) { src.setData(routeFeature(id, coords)); continue; }
+    ML.shown[id] = true;
+    const t0 = performance.now() + (first ? 0 : DUR * 0.6), len = DUR || 1;
+    const tick = now => { const t = Math.min(1, Math.max(0, (now - t0) / len)); src.setData(routeFeature(id, sliceRoute(coords, t))); if (t < 1) ML.anim[id] = requestAnimationFrame(tick); };
+    ML.anim[id] = requestAnimationFrame(tick);
+  }
+  for (const id in B.battles) if (B.battles[id].front) m.setPaintProperty('bf-' + id, 'line-opacity', page.battle === id ? 0.9 : 0);
+  m.getSource('emblem').setData(page.emblem ?? { type:'FeatureCollection', features: [] });
+  mapMarkers(page);
+  closeBattle();
+  if (page.battle) { clearTimeout(ML.battleTimer); ML.battleTimer = setTimeout(() => { if (PAGES[cur] === page) openBattle(page.battle); }, first ? 300 : DUR * 0.8); }
+}
+function mapMarkers(page, redraw){
+  const m = ML.map; if (!m || !ML.ready) return;
+  if (redraw) for (const id in ML.markers) { const mk = ML.markers[id]; delete ML.markers[id]; mk.getElement().classList.remove('in'); setTimeout(() => mk.remove(), 650); }
+  const wanted = [...page.markers, ...(page.battle ? ['battle:' + page.battle] : [])];
+  for (const id in ML.markers) if (!wanted.includes(id)) { const mk = ML.markers[id]; delete ML.markers[id]; mk.getElement().classList.remove('in'); setTimeout(() => mk.remove(), 650); }
+  wanted.forEach(id => {
+    if (ML.markers[id]) return;
+    const isBattle = id.startsWith('battle:');
+    const src = isBattle ? B.battles[id.slice(7)] : B.markers[id];
+    const data = isBattle ? { icon: 'swords', color: null, image: null, label: src.name, note: src.date } : src;
+    const el = markerEl(data, isBattle);
+    if (isBattle) el.onclick = e => { e.stopPropagation(); openBattle(id.slice(7)); }; // the map would otherwise close the popup on the same click
+    const mk = new maplibregl.Marker({ element: el, anchor:'top' }).setLngLat(src.lnglat).addTo(m);
+    ML.markers[id] = mk; requestAnimationFrame(() => requestAnimationFrame(() => mk.getElement().classList.add('in')));
+  });
+}
+
+// ---------- panes ----------
+const navEl = $('nav'), story = $('story'), legend = $('legend');
+function renderChrome(){
+  document.documentElement.lang = lang;
+  document.title = L(B.title);
+  $('title').textContent = L(B.title);
+  $('back').textContent = L(B.site.title);
+  $('back').href = siteLink(lang);
+  $('toast-close').textContent = T().close;
+  $('hint').textContent = T().hint;
+  $('credit').innerHTML = credit(T());
+  $('prev').textContent = T().prev;
+  $('next').textContent = T().next;
+  $('lb-close').textContent = T().close;
+  navEl.setAttribute('aria-label', T().chronology);
+  fillSelect($('lang'), B.languages.map(l => ({ value: l, text: B.ui[l].name ?? l })), lang, T().language);
+  fillSelect($('theme'), B.themes.map(t => ({ value: t.id, text: L(t.name) })), palette, T().theme);
+}
+const closedGroups = new Set(); // groups the reader folded; navigating to a page opens the groups above it
+const holds = (node, index) => node.type === 'page' ? node.index === index : node.children.some(c => holds(c, index));
+const groupKeys = (nodes, key = '') => nodes.flatMap(n => n.type === 'group' ? [key + '/' + n.id, ...groupKeys(n.children, key + '/' + n.id)] : []);
+const ALL_GROUPS = groupKeys(B.tree);
+const allGroupsOpen = () => ALL_GROUPS.every(k => !closedGroups.has(k));
+function renderNav(reveal = true){
+  navEl.innerHTML = '';
+  if (ALL_GROUPS.length) {
+    const t = document.createElement('button'); t.type = 'button'; t.className = 'toggle-all';
+    t.textContent = toggleLabel(T(), allGroupsOpen());
+    t.onclick = () => { allGroupsOpen() ? ALL_GROUPS.forEach(k => closedGroups.add(k)) : closedGroups.clear(); renderNav(false); };
+    navEl.appendChild(t);
+  }
+  const build = (nodes, depth, key) => {
+    const frag = document.createDocumentFragment();
+    for (const n of nodes) {
+      if (n.type === 'page') {
+        const p = PAGES[n.index]; const b = document.createElement('button');
+        b.style.setProperty('--depth', depth); b.setAttribute('aria-current', n.index === cur ? 'true' : 'false');
+        b.innerHTML = `<span class="d">${esc(L(p.date))}</span>${esc(L(p.title))}`; b.onclick = () => go(n.index); frag.appendChild(b);
+      } else {
+        const k = key + '/' + n.id; const d = document.createElement('details');
+        if (reveal && holds(n, cur)) closedGroups.delete(k);
+        d.open = !closedGroups.has(k);
+        d.addEventListener('toggle', () => { if (d.open) closedGroups.delete(k); else closedGroups.add(k); const btn = navEl.querySelector('.toggle-all'); if (btn) btn.textContent = toggleLabel(T(), allGroupsOpen()); });
+        const s = document.createElement('summary'); s.style.setProperty('--depth', depth); s.textContent = L(n.title);
+        d.appendChild(s); d.appendChild(build(n.children, depth + 1, k)); frag.appendChild(d);
+      }
+    }
+    return frag;
+  };
+  navEl.appendChild(build(B.tree, 0, ''));
+}
+function renderStory(p){
+  const sources = p.sources[lang].length ? `<h3>${esc(T().sources)}</h3><ol>${p.sources[lang].map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : '';
+  story.innerHTML = `<div class="date">${esc(L(p.date))}</div><h2>${esc(L(p.title))}</h2>${p.html[lang]}${sources}`;
+  story.scrollTop = 0;
+  legend.innerHTML = p.zones.map(z => `<span><i style="${patternCss(B.zones[z].family)}"></i>${esc(L(B.zones[z].name))}</span>`).join('')
+    + p.routes.map(r => `<span><i class="r ${B.routes[r].style}"></i>${esc(L(B.routes[r].name))}</span>`).join('');
+  legend.hidden = !legend.innerHTML;
+  $('stepno').textContent = `${cur + 1} / ${PAGES.length}`;
+  $('prev').disabled = cur === 0; $('next').disabled = cur === PAGES.length - 1;
+}
+function go(i, fromHash){ cur = i; renderNav(); renderStory(PAGES[cur]); mapApply(PAGES[cur]); if (!fromHash) writeHash(true); }
+function setLang(l, fromHash){
+  lang = l; savePref('lang', l);
+  if (B.labels && ML.map && ML.ready) ML.map.setLayoutProperty('labels', 'text-field', ['get', lang]);
+  renderChrome(); renderNav(); renderStory(PAGES[cur]); mapMarkers(PAGES[cur], true); if (battlePopup && PAGES[cur].battle) openBattle(PAGES[cur].battle); if (!fromHash) writeHash(false);
+}
+function setPalette(id){ palette = id; applyPalette(id); $('theme').value = id; mapTheme(); }
+addEventListener('hashchange', () => {
+  const r = parseHash();
+  if (r.lang && B.languages.includes(r.lang) && r.lang !== lang) setLang(r.lang, true);
+  if (r.page) { const i = pageIndex(r.page); if (i >= 0 && i !== cur) go(i, true); }
+});
+$('toast-close').onclick = () => { $('toast').hidden = true; };
+document.addEventListener('click', e => { const t = e.target.closest('[data-img]'); if (t) { e.stopPropagation(); openImage(t.dataset.img); } });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches('[data-img]')) openImage(e.target.dataset.img);
+  if (e.key === 'Escape') { closeImage(); closeBattle(); }
+  if (e.target.closest('input,textarea,select')) return;
+  if (e.key === 'ArrowRight' && cur < PAGES.length - 1) go(cur + 1);
+  if (e.key === 'ArrowLeft' && cur > 0) go(cur - 1);
+});
+$('lb-close').onclick = closeImage;
+$('lightbox').addEventListener('click', e => { if (e.target.id === 'lightbox') closeImage(); });
+$('lang').onchange = e => setLang(e.target.value);
+$('theme').onchange = e => setPalette(e.target.value);
+$('prev').onclick = () => go(cur - 1);
+$('next').onclick = () => go(cur + 1);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', mapTheme);
+new MutationObserver(mapTheme).observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+
+renderChrome(); renderNav(); renderStory(PAGES[cur]); mapInit(); writeHash(false);
+if (notices.length) toast(notices.join(' '));
+</script>
+</body>
+</html>

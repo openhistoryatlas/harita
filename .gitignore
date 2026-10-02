@@ -1,0 +1,10 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+# build output and temp screenshots when harita is run inside this folder
+dist/
+.tmp/
+# editor state
+.vscode/
+.idea/
+*.swp

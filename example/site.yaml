@@ -1,0 +1,6 @@
+# The main page: a list of the stories under content/.
+title: { en: Example histories }
+intro: { en: "A one story site that shows every content file harita reads." }
+languages: [en]
+default_language: en
+theme: parchment

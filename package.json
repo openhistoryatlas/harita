@@ -1,0 +1,58 @@
+{
+  "name": "@openhistoryatlas/harita",
+  "version": "0.1.0",
+  "description": "Interactive timelines on a map: one standalone HTML page per story, built from a content folder",
+  "keywords": [
+    "map",
+    "timeline",
+    "history",
+    "maplibre",
+    "geojson",
+    "static-site"
+  ],
+  "license": "MIT",
+  "author": "Can Bascil",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openhistoryatlas/harita.git"
+  },
+  "homepage": "https://github.com/openhistoryatlas/harita#readme",
+  "bugs": {
+    "url": "https://github.com/openhistoryatlas/harita/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "bin": {
+    "harita": "bin/harita.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs",
+    "./schema": "./src/schema.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node --test",
+    "prepublishOnly": "npm test"
+  },
+  "dependencies": {
+    "@turf/turf": "^7.4.0",
+    "js-yaml": "^4.1.0",
+    "lucide-static": "^1.49.0",
+    "marked": "^15.0.0",
+    "pngjs": "^7.0.0",
+    "polylabel": "^2.1.0",
+    "topojson-client": "^3.1.0",
+    "topojson-server": "^3.0.1",
+    "world-atlas": "^2.0.2",
+    "zod": "^4.6.5"
+  }
+}

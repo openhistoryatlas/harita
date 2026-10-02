@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Histories</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --display:"Fraunces",Georgia,"Times New Roman",serif;
+  --body:"Public Sans","Helvetica Neue",Arial,sans-serif;
+}
+/*__THEMES_CSS__*/
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;padding-inline:16px;padding-block:12px}
+.wrap{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+h1,h2{font-family:var(--display);font-weight:500;margin:0;text-wrap:balance}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--rule);padding-bottom:10px}
+header h1{font-size:26px}
+header .controls{margin-left:auto;display:flex;gap:8px}
+select#lang,select#theme{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:5px 8px;font:inherit;cursor:pointer}
+select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--accent)}
+.intro{max-width:62ch;color:var(--ink-2);margin:0}
+.listbar{display:flex;justify-content:flex-end}
+.listbar button,.toggle-all{background:none;border:1px solid var(--rule);border-radius:4px;color:var(--ink-2);font:inherit;font-size:12px;padding:4px 10px;cursor:pointer}
+.listbar button:hover,.toggle-all:hover{color:var(--ink)}
+.listbar button:focus-visible,.toggle-all:focus-visible{outline:2px solid var(--accent)}
+.rows{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule)}
+.row{border-bottom:1px solid var(--rule)}
+.row > button{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:4px 16px;align-items:baseline;width:100%;text-align:left;background:none;border:0;
+  color:var(--ink);font:inherit;padding:14px 8px;cursor:pointer}
+.row > button:hover{background:var(--panel)}
+.row > button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.row .span{grid-column:2;grid-row:1;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-variant-numeric:tabular-nums}
+.row h2{grid-column:3;grid-row:1;font-size:20px;line-height:1.2}
+.row .brief{grid-column:2/4;grid-row:2;color:var(--ink-2);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.row .chev{grid-column:1;grid-row:1/3;align-self:center;width:0;height:0;border:5px solid transparent;border-left:6px solid var(--ink-2);transition:transform .15s}
+.row > button[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.row > button[aria-expanded="true"] .brief{visibility:hidden}
+.row .detail{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;padding:0 8px 18px}
+.row .detail p{margin:0;max-width:62ch}
+.row .detail .meta{display:flex;gap:12px;font-size:12px;color:var(--ink-2);margin-top:12px}
+.row .detail .open{display:inline-block;margin-top:14px;background:var(--ink);color:var(--paper);text-decoration:none;padding:7px 14px;border-radius:4px;font-size:14px}
+.row .detail .open:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row .cover{aspect-ratio:16/10;background:var(--paper-2);border:1px solid var(--rule);display:grid;place-items:center;overflow:hidden}
+.row .cover img{width:100%;height:100%;object-fit:cover;display:block}
+.credit{font-size:12px;color:var(--ink-2);border-top:1px solid var(--rule);padding-top:10px}
+.credit a{color:inherit}
+.row .cover span{font-family:var(--display);font-size:22px;color:var(--ink-2);padding:12px;text-align:center}
+@media (max-width:640px){
+  .row > button{grid-template-columns:auto minmax(0,1fr)}
+  .row .span{grid-column:2;grid-row:1}
+  .row h2{grid-column:2;grid-row:2}
+  .row .brief{grid-column:2;grid-row:3}
+  .row .chev{grid-column:1;grid-row:1/4}
+  .row .detail{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title"></h1>
+    <div class="controls"><select id="lang"></select><select id="theme"></select></div>
+  </header>
+  <p class="intro" id="intro"></p>
+  <div class="listbar"><button type="button" id="toggle-all"></button></div>
+  <ul class="rows" id="rows"></ul>
+  <footer class="credit" id="credit"></footer>
+</div>
+<script>
+/*__COMMON__*/
+const SITE = null;
+const S = SITE;
+let lang = pref('lang', S.languages, S.defaultLanguage);
+{ const [h] = hashParts(); if (S.languages.includes(h)) lang = h; }
+let palette = pref('palette', S.themes.map(t => t.id), S.defaultTheme);
+document.documentElement.dataset.palette = palette;
+const L = field => pick(field, lang, S.defaultLanguage);
+const open = new Set();
+const allOpen = () => S.stories.every(s => open.has(s.id));
+function render(){
+  document.documentElement.lang = lang;
+  document.title = L(S.title);
+  $('title').textContent = L(S.title);
+  $('intro').textContent = L(S.intro);
+  fillSelect($('lang'), S.languages.map(l => ({ value: l, text: S.ui[l].name ?? l })), lang, S.ui[lang].language);
+  fillSelect($('theme'), S.themes.map(t => ({ value: t.id, text: pick(t.name, lang, S.defaultLanguage, t.id) })), palette, S.ui[lang].theme);
+  $('toggle-all').textContent = toggleLabel(S.ui[lang], allOpen());
+  $('credit').innerHTML = credit(S.ui[lang]);
+  $('rows').innerHTML = S.stories.map((s, i) => `
+    <li class="row">
+      <button type="button" aria-expanded="${open.has(s.id)}" aria-controls="d-${i}" data-id="${esc(s.id)}">
+        <span class="span">${esc(L(s.span))}</span><h2>${esc(L(s.title))}</h2><span class="chev"></span>
+        <span class="brief">${esc(L(s.summary))}</span>
+      </button>
+      <div class="detail" id="d-${i}" ${open.has(s.id) ? '' : 'hidden'}>
+        <div>
+          <p>${esc(L(s.summary))}</p>
+          <div class="meta"><span>${s.pages} ${esc(S.ui[lang].pages)}</span><span>${esc(s.languages.map(l => S.ui[l]?.name ?? l).join(', '))}</span></div>
+          <a class="open" href="${storyLink(s.id, lang)}">${esc(S.ui[lang].open)}</a>
+        </div>
+        <div class="cover">${s.cover ? `<img src="./${esc(s.id)}/${esc(s.cover)}" alt="">` : `<span>${esc(L(s.title))}</span>`}</div>
+      </div>
+    </li>`).join('');
+}
+$('rows').addEventListener('click', e => {
+  const b = e.target.closest('button[data-id]'); if (!b) return;
+  const id = b.dataset.id; open.has(id) ? open.delete(id) : open.add(id);
+  b.setAttribute('aria-expanded', open.has(id)); $(b.getAttribute('aria-controls')).hidden = !open.has(id);
+  $('toggle-all').textContent = toggleLabel(S.ui[lang], allOpen());
+});
+$('toggle-all').onclick = () => { const all = allOpen(); S.stories.forEach(s => all ? open.delete(s.id) : open.add(s.id)); render(); };
+$('theme').onchange = e => { palette = e.target.value; applyPalette(palette); };
+$('lang').onchange = e => { lang = e.target.value; savePref('lang', lang); setHash('#' + lang, false); render(); };
+render();
+</script>
+</body>
+</html>

@@ -9,9 +9,11 @@ import * as turf from '@turf/turf';
 import * as tc from 'topojson-client';
 import * as ts from 'topojson-server';
 import polylabel from 'polylabel';
-import { check, Site, Story, Group, Page, Markers, Battles, Images, Zone, Route, Themes } from './schema.mjs';
+import { check, Site, Story, Group, Page, Camera, Markers, Battles, Images, Zone, Route, Themes } from './schema.mjs';
 import { alikePairs, describe } from './palette.mjs';
-import { loadCatalogues, translator } from './i18n.mjs';
+import { loadCatalogues, translator, flatten, unflatten } from './i18n.mjs';
+import { coverage } from './coverage.mjs';
+import { terrainPlan, tileKeys, terrainTiles, openZoom } from './terrain.mjs';
 
 // PKG is this package. The content project comes in as the root of each build.
 const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -48,14 +50,24 @@ const emptyText = langs => Object.fromEntries(langs.map(l => [l, '']));
 // A when value with the missing parts rounded down for from and up for to.
 const whenEdge = (s, isEnd) => { const [y, m, d] = s.split('-'); return `${y}-${m ?? (isEnd ? '12' : '01')}-${d ?? (isEnd ? '31' : '01')}`; };
 // Interface strings for a language: the package file, else English, with the project's i18n/ui/<lang>.yaml laid over it.
-function uiFor(langs, root, log) {
-  return Object.fromEntries(langs.map(l => {
-    const override = path.join(root, 'i18n', 'ui', l + '.yaml');
-    if (!UI[l] && !exists(override)) log(`  warning: no interface strings for "${l}", showing English; add i18n/ui/${l}.yaml`);
-    return [l, { ...(UI[l] ?? UI.en), ...(exists(override) ? yaml.load(fs.readFileSync(override, 'utf8')) : {}) }];
-  }));
+// Interface keys: every string harita ships in English, plus a name for each theme the site offers.
+const uiOwn = (root, l) => { const f = path.join(root, 'i18n', 'ui', l + '.yaml'); return exists(f) ? flatten(yaml.load(fs.readFileSync(f, 'utf8')) ?? {}) : {}; };
+export function uiCatalogue(root, lang, themes) {
+  const en = flatten(UI.en);
+  const entries = Object.keys(en).filter(k => !k.startsWith('themes.')).map(key => ({ key, source: en[key], shared: false, inline: null }))
+    .concat(Object.entries(themes).map(([id, t]) => ({ key: `themes.${id}`, source: en[`themes.${id}`] ?? (typeof t.name === 'string' ? t.name : t.name?.en) ?? id, shared: false, inline: null })));
+  // a theme that still carries an inline name for this language counts as translated
+  const inlineNames = Object.fromEntries(Object.entries(themes).filter(([, t]) => typeof t.name === 'object' && t.name?.[lang]).map(([id, t]) => [`themes.${id}`, t.name[lang]]));
+  const have = { ...inlineNames, ...flatten(UI[lang] ?? {}), ...uiOwn(root, lang) };
+  return { entries, existing: have, missing: entries.filter(e => !have[e.key]).map(e => e.key), shipped: Object.keys(flatten(UI[lang] ?? {})).length > 0 };
 }
-const themeList = (themes, ui, langs) => Object.entries(themes).map(([id, t]) => ({ id, name: Object.fromEntries(langs.map(l => [l, ui[l].themes?.[id] ?? t.name?.[l] ?? t.name?.en ?? id])) }));
+// dir is the language's writing direction, from ICU; Node before 23 has textInfo, later ones getTextInfo()
+const textDir = l => { const loc = new Intl.Locale(l); return (loc.getTextInfo?.() ?? loc.textInfo).direction; };
+function uiFor(langs, root) {
+  // a missing key falls back to English alone
+  return Object.fromEntries(langs.map(l => [l, { ...unflatten({ ...flatten(UI.en), ...flatten(UI[l] ?? {}), ...uiOwn(root, l) }), dir: textDir(l) }]));
+}
+const themeList = (themes, ui, langs) => Object.entries(themes).map(([id, t]) => ({ id, name: Object.fromEntries(langs.map(l => [l, ui[l].themes?.[id] ?? (typeof t.name === 'string' ? t.name : t.name?.[l] ?? t.name?.en) ?? id])) }));
 
 // The content project of one build: its folders, its logger, and readers that name files relative to it.
 function project(root, log) {
@@ -63,7 +75,7 @@ function project(root, log) {
   const loadYaml = p => { try { return yaml.load(fs.readFileSync(p, 'utf8')) ?? {}; } catch (e) { fail(rel(p), e.message); } };
   const readYaml = (p, schema) => check(schema, loadYaml(p), rel(p));
   const readJson = (p, schema) => check(schema, JSON.parse(fs.readFileSync(p, 'utf8')), rel(p));
-  return { root, content: path.join(root, 'content'), geo: path.join(root, 'geo'), dist: path.join(root, 'dist'), log, rel, loadYaml, readYaml, readJson };
+  return { root, content: path.join(root, 'content'), dist: path.join(root, 'dist'), log, rel, loadYaml, readYaml, readJson };
 }
 
 const LAND_SLOTS = 8;
@@ -95,9 +107,10 @@ function buildStory(p, storyDir, site) {
   const { rel, readYaml, readJson, log, root } = p;
   const where = rel(storyDir);
   const story = readYaml(path.join(storyDir, 'story.yaml'), Story);
+  if (story.hillshade) log(`  ${where}/story.yaml: the relief comes from elevation tiles now, remove the hillshade line and geo/${story.hillshade}`);
   const langs = story.languages;
   const defaultLang = story.default_language ?? langs[0];
-  const ui = uiFor(langs, root, log);
+  const ui = uiFor(langs, root);
   // strings: the default language inline, the others from i18n/<lang>.yaml catalogues
   const { tr: T, entries, report } = translator({ langs, defaultLang, catalogues: loadCatalogues(path.join(storyDir, 'i18n'), langs, p.loadYaml), where: `${where}/i18n`, fail });
   const { tr: siteT } = translator({ langs, defaultLang: site.default_language ?? defaultLang, catalogues: loadCatalogues(path.join(root, 'i18n'), langs, p.loadYaml), where: 'i18n', fail });
@@ -115,16 +128,16 @@ function buildStory(p, storyDir, site) {
     .map(f => ({ type: 'Feature', id: f.id, properties: { name: f.properties.name }, geometry: clip(f) }));
   for (const n of story.countries) if (!countries.find(f => f.properties.name === n)) fail(where, `country "${n}" not in Natural Earth`);
   for (const f of countries) if (!f.geometry.coordinates.length) fail(where, `country "${f.properties.name}" lies outside the extent`);
-  // tint: an index into the theme's land tints such that no two neighbours share one; most connected countries first
-  const touches = countries.map(a => countries.filter(b => b !== a && turf.booleanIntersects(a, b)));
-  for (const i of countries.map((_, i) => i).sort((a, b) => touches[b].length - touches[a].length)) {
-    const taken = new Set(touches[i].map(n => n.properties.tint).filter(t => t != null));
-    let t = 0; while (taken.has(t)) t++;
-    countries[i].properties.tint = t % LAND_SLOTS;
-  }
   const landParts = story.land.map(n => countries.find(f => f.properties.name === n) || fail(where, `land "${n}" is not in countries`));
   const land = landParts.length > 1 ? turf.union(turf.featureCollection(landParts)) : landParts[0];
   const topo = ts.topology({ countries: { type: 'FeatureCollection', features: countries } }, 1e5);
+  // tint: an index into the theme's land tints such that no two neighbours share one; most connected countries first
+  const geoms = topo.objects.countries.geometries, near = tc.neighbors(geoms);
+  for (const i of geoms.map((_, i) => i).sort((a, b) => near[b].length - near[a].length)) {
+    const taken = new Set(near[i].map(j => geoms[j].properties.tint));
+    let t = 0; while (taken.has(t)) t++;
+    geoms[i].properties.tint = t % LAND_SLOTS;
+  }
 
   // --- country labels: one point per country at the pole of inaccessibility of its largest visible piece ---
   // The text per language is the override from story.yaml, else the Natural Earth name. rank orders collisions, big first.
@@ -148,9 +161,8 @@ function buildStory(p, storyDir, site) {
     return { type: 'group', id, title: T(g.title ?? id, `groups.${id}.title`), children: walk(full) };
   });
   const tree = walk(path.join(storyDir, 'pages'));
-  const pageDirs = [];
-  const flatten = nodes => nodes.forEach(n => n.type === 'page' ? pageDirs.push(n.dir) : flatten(n.children));
-  flatten(tree);
+  const pagesIn = nodes => nodes.flatMap(n => n.type === 'page' ? [n.dir] : pagesIn(n.children));
+  const pageDirs = pagesIn(tree);
   if (!pageDirs.length) fail(where, 'no pages');
 
   // --- zones, routes, markers, images from shared/ and every page ---
@@ -169,14 +181,14 @@ function buildStory(p, storyDir, site) {
     }
     for (const f of listFiles(path.join(dir, 'routes'), '.geojson')) {
       const file = path.join(dir, 'routes', f), feat = readJson(file, Route), id = feat.properties.id ?? idOf(f.replace('.geojson', ''));
-      define(routes, id, { id, name: T(feat.properties.name, `routes.${id}.name`), style: feat.properties.style, coordinates: feat.geometry.coordinates }, rel(file), 'route');
+      define(routes, id, { id, name: T(feat.properties.name, `routes.${id}.name`), style: feat.properties.style, arrows: feat.properties.arrows, offset: feat.properties.offset, coordinates: feat.geometry.coordinates }, rel(file), 'route');
     }
     const markerFile = path.join(dir, 'markers.yaml');
     if (exists(markerFile)) {
       for (const [id, m] of Object.entries(readYaml(markerFile, Markers))) {
         if (m.color && !story.families[m.color]) fail(rel(markerFile), `marker "${id}" uses unknown family "${m.color}"`);
         define(markers, id, { id, lnglat: m.lnglat, icon: LEGACY_ICONS[m.icon] ?? m.icon, color: m.color ?? null, image: m.image ?? null,
-          label: T(m.label, `markers.${id}.label`), note: m.note ? T(m.note, `markers.${id}.note`) : emptyText(langs) }, rel(markerFile), 'marker');
+          label: T(m.label, `markers.${id}.label`, { shared: true }), note: m.note ? T(m.note, `markers.${id}.note`) : emptyText(langs) }, rel(markerFile), 'marker');
       }
     }
     const battleFile = path.join(dir, 'battles.yaml');
@@ -186,7 +198,7 @@ function buildStory(p, storyDir, site) {
         const sides = b.sides.map((s, i) => {
           if (s.color && !/^#/.test(s.color) && !story.families[s.color]) fail(at, `side ${i + 1} uses unknown family "${s.color}"`);
           const k = `battles.${id}.sides.${i}`;
-          return { name: T(s.name, `${k}.name`), color: s.color ?? null, commanders: s.commanders.map((c, j) => T(c, `${k}.commanders.${j}`)),
+          return { name: T(s.name, `${k}.name`), color: s.color ?? null, commanders: s.commanders.map((c, j) => T(c, `${k}.commanders.${j}`, { shared: true })),
             strength: s.strength ? T(s.strength, `${k}.strength`) : null, casualties: s.casualties ? T(s.casualties, `${k}.casualties`) : null };
         });
         define(battles, id, { id, lnglat: b.lnglat, name: T(b.name, `battles.${id}.name`), date: T(b.date, `battles.${id}.date`), result: b.result ? T(b.result, `battles.${id}.result`) : null,
@@ -205,30 +217,18 @@ function buildStory(p, storyDir, site) {
   }
   for (const m of Object.values(markers)) if (m.image && !images[m.image]) fail(where, `marker "${m.id}" uses unknown image "${m.image}"`);
   for (const b of Object.values(battles)) for (const im of b.images) if (!images[im]) fail(where, `battle "${b.id}" uses unknown image "${im}"`);
-  const iconNames = new Set(['swords', 'x', 'external-link', 'chevron-left', 'chevron-right', 'list', ...Object.values(markers).map(m => m.icon)]);
+  const iconNames = new Set(['swords', 'x', 'external-link', 'chevron-left', 'chevron-right', 'list', 'info', ...Object.values(markers).map(m => m.icon)]);
   const icons = Object.fromEntries([...iconNames].map(n => [n, iconSvg(n, where)]));
 
-  // --- clean zones: round corners, clip to land, trim by family priority, validate ---
+  // --- clean zones: trim by family priority, round the shared boundaries once, clip to land, validate ---
   // zones only trim and overlap check against zones that share a page with them, so a 1915 beachhead
   // never cuts a hole in a 1919 occupation zone
   const pageZones = pageDirs.map(dir => readYaml(path.join(dir, 'page.yaml'), Page).zones);
   const together = (a, b) => pageZones.some(zs => zs.includes(a) && zs.includes(b));
   const prio = f => story.families[f].priority;
-  const zones = {};
   const ordered = Object.values(rawZones).sort((a, b) => prio(a.family) - prio(b.family));
-  for (const z of ordered) {
-    let g = turf.feature(z.geometry);
-    if (story.smoothing) g = turf.polygonSmooth(g, { iterations: story.smoothing }).features[0];
-    g = intersect(g, z.clip);
-    if (!g) fail(where, `zone "${z.id}": nothing left after the land clip`);
-    for (const h of ordered) {
-      if (h.family === z.family || prio(h.family) >= prio(z.family) || !together(z.id, h.id)) continue;
-      const cut = difference(g, zones[h.id].feature);
-      if (!cut) fail(where, `zone "${z.id}": fully covered by "${h.id}"`);
-      g = cut;
-    }
-    zones[z.id] = { ...z, feature: g };
-  }
+  const shapes = coverage({ zones: ordered, prio, together, smoothing: story.smoothing, fail, where, intersect, difference });
+  const zones = Object.fromEntries(ordered.map(z => [z.id, { ...z, feature: shapes[z.id] }]));
   for (const z of Object.values(zones)) {
     const onLand = intersect(z.feature, z.clip);
     const off = km2(z.feature) - (onLand ? km2(onLand) : 0);
@@ -273,10 +273,12 @@ function buildStory(p, storyDir, site) {
       });
       html[lang] = marked.parse(md);
     }
+    // a battle page opens in 3D when its view is close enough for the relief to show
+    const camera = p.camera === false ? null : p.camera ?? (p.battle && openZoom(p.bbox) >= 6 ? Camera.parse({}) : null);
     const sourceTexts = p.sources.map((s, i) => T(s, `pages.${pid}.sources.${i}`, { shared: true }));
     const sources = Object.fromEntries(langs.map(l => [l, sourceTexts.map(s => s[l])]));
     return { id: pid, dir: rel(dir), when, date: T(p.date, `pages.${pid}.date`), title: T(p.title, `pages.${pid}.title`),
-      bbox: p.bbox, zones: p.zones, routes: p.routes, markers: p.markers, battle: p.battle ?? null, emblem: p.emblem ? emblemFor(root, p.emblem, `${at} emblem`) : null, html, sources };
+      bbox: p.bbox, camera, zones: p.zones, routes: p.routes, markers: p.markers, battle: p.battle ?? null, emblem: p.emblem ? emblemFor(root, p.emblem, `${at} emblem`) : null, html, sources };
   });
   for (let i = 1; i < pages.length; i++) {
     if (pages.find((q, j) => j < i && q.id === pages[i].id)) fail(where, `two pages share the id "${pages[i].id}"`);
@@ -296,13 +298,8 @@ function buildStory(p, storyDir, site) {
     cover = 'cover' + path.extname(story.cover); fs.copyFileSync(src, path.join(out, cover));
   }
 
-  // --- hillshade ---
-  const hillFile = path.join(p.geo, story.hillshade);
-  if (!exists(hillFile)) fail(where, `hillshade geo/${story.hillshade} is missing`);
-  const hillBbox = JSON.parse(fs.readFileSync(hillFile.replace(/\.png$/, '.bbox.json'), 'utf8'));
-  // the raster ships as a file next to the page, so the browser caches it and the HTML stays small
-  fs.copyFileSync(hillFile, path.join(out, 'hillshade.png'));
-  const hill = { src: 'hillshade.png', bbox: hillBbox };
+  // --- elevation: the tiles this story needs; build() cuts them into dist/terrain, shared by every story ---
+  const terrain = { tiles: '../terrain/{z}/{x}/{y}.png', ...terrainPlan(story.extent, pages.map(pg => pg.bbox)) };
 
   // --- bundle and page ---
   const bundle = {
@@ -310,8 +307,8 @@ function buildStory(p, storyDir, site) {
     extent: story.extent, ui, families: story.families,
     site: { title: siteT(site.title, 'site.title'), source: site.repository ? `${site.repository.replace(/\/$/, '')}/tree/${site.branch}/content/${story.id}` : null },
     themes: themeList(site.themes, ui, langs), defaultTheme: story.theme ?? site.theme,
-    topo, land: { type: 'Feature', properties: {}, geometry: land.geometry }, hill, labels,
-    zones: Object.fromEntries(Object.values(zones).map(z => [z.id, { family: z.family, name: z.name, geometry: turf.truncate(z.feature, { precision: 4 }).geometry }])),
+    topo, land: { type: 'Feature', properties: {}, geometry: land.geometry }, terrain, labels,
+    zones: Object.fromEntries(Object.values(zones).map(z => [z.id, { family: z.family, name: z.name, area: Math.round(km2(z.feature)), geometry: turf.truncate(z.feature, { precision: 4 }).geometry }])),
     routes, markers, battles, images, icons, pages: pages.map(({ dir, ...p }) => p), tree: navTree(tree),
   };
   const familyCss = Object.entries(story.families).map(([f, c]) => `--z-${f}:${c.color};`).join('');
@@ -332,7 +329,12 @@ function buildStory(p, storyDir, site) {
     log(`  ${lang}: ${r.total - r.missing.length} of ${r.total} strings translated${r.missing.length ? `, ${r.missing.length} missing (harita i18n ${lang})` : ''}`);
     if (p.strict && r.missing.length) fail(where, `${lang}: ${r.missing.length} strings missing, first: ${r.missing.slice(0, 8).join(', ')}`);
   }
-  return { id: story.id, title: bundle.title, summary, span, languages: langs, pages: pages.length, cover, i18n: [...entries.values()] };
+  for (const lang of langs.filter(l => l !== 'en')) {
+    const u = uiCatalogue(root, lang, site.themes);
+    if (u.missing.length) log(`  ${lang} interface: ${u.entries.length - u.missing.length} of ${u.entries.length} strings translated, ${u.missing.length} missing (harita i18n ${lang})`);
+    if (p.strict && u.missing.length) fail(where, `${lang} interface: ${u.missing.length} strings missing, first: ${u.missing.slice(0, 8).join(', ')}`);
+  }
+  return { id: story.id, title: bundle.title, summary, span, languages: langs, pages: pages.length, cover, i18n: [...entries.values()], terrain };
 }
 
 // The site index. site.yaml is optional: the folder name, alphabetical order and the cool theme stand in.
@@ -342,11 +344,11 @@ function buildIndex(p, cards, site) {
   const order = site.stories ?? cards.map(c => c.id);
   for (const id of order) if (!cards.find(c => c.id === id)) fail('site.yaml', `unknown story "${id}"`);
   const { tr: T, entries, report } = translator({ langs, defaultLang, catalogues: loadCatalogues(path.join(p.root, 'i18n'), langs, p.loadYaml), where: 'i18n', fail });
-  const ui = uiFor(langs, p.root, p.log);
+  const ui = uiFor(langs, p.root);
   const data = {
     title: T(site.title, 'site.title'), intro: site.intro ? T(site.intro, 'site.intro') : {},
     languages: langs, defaultLanguage: defaultLang, ui, repository: site.repository ?? null,
-    stories: order.map(id => { const { i18n, ...card } = cards.find(c => c.id === id); return card; }),
+    stories: order.map(id => { const { i18n, terrain, ...card } = cards.find(c => c.id === id); return card; }),
     themes: themeList(site.themes, ui, langs), defaultTheme: site.theme,
   };
   for (const [lang, r] of Object.entries(report())) {
@@ -358,8 +360,8 @@ function buildIndex(p, cards, site) {
   p.log(`wrote dist/index.html (${data.stories.length} stories)`);
 }
 
-// Build every story under root/content into root/dist. Returns the dist folder and one card per story.
-export function build({ root = process.cwd(), log = console.log, strict = false } = {}) {
+// Every story under root/content into root/dist, without the elevation tiles. harita i18n reads its strings.
+export function buildPages({ root = process.cwd(), log = console.log, strict = false } = {}) {
   const p = project(root, log);
   p.strict = strict;
   const stories = listDirs(p.content).filter(d => exists(path.join(p.content, d, 'story.yaml')));
@@ -372,5 +374,14 @@ export function build({ root = process.cwd(), log = console.log, strict = false 
   const cards = [];
   for (const s of stories) { log(`story ${s}`); cards.push(buildStory(p, path.join(p.content, s), site)); }
   buildIndex(p, cards, site);
-  return { dist: p.dist, stories: cards.map(({ i18n, ...card }) => card), i18n: { stories: Object.fromEntries(cards.map(c => [c.id, c.i18n])), site: p.siteEntries } };
+  return { dist: p.dist, themes: site.themes, stories: cards.map(({ i18n, terrain, ...card }) => card), i18n: { stories: Object.fromEntries(cards.map(c => [c.id, c.i18n])), site: p.siteEntries },
+    terrain: tileKeys(cards.map(c => c.terrain)) };
+}
+
+// Build every story under root/content into root/dist, with the elevation tiles. Returns the dist folder and one
+// card per story. Tiles are kept in cache, so only the first build of an area downloads them.
+export async function build({ root = process.cwd(), log = console.log, strict = false, cache = path.join(root, '.cache', 'harita'), elevation } = {}) {
+  const { terrain, ...r } = buildPages({ root, log, strict });
+  await terrainTiles({ keys: terrain, cache, out: path.join(r.dist, 'terrain'), elevation, log });
+  return r;
 }

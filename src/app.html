@@ -25,11 +25,11 @@ h1,h2,h3{font-family:var(--display);font-weight:500;margin:0;text-wrap:balance}
 header{display:flex;align-items:center;gap:1.143rem;flex-wrap:wrap;border-bottom:1px solid var(--rule);padding-bottom:.714rem}
 header h1{font-size:1.571rem}
 header a.back{color:var(--ink-2);text-decoration:none;font-size:.929rem;display:inline-flex;align-items:center;gap:.286rem}
-header a.back::before{content:"";width:0;height:0;border:5px solid transparent;border-right:6px solid var(--ink-2)}
+header a.back::before{content:"";width:0;height:0;border:5px solid transparent;border-inline-end:6px solid var(--ink-2)}
 header a.back:hover{color:var(--ink)}
 header a.back:focus-visible{outline:2px solid var(--accent)}
 header .note{color:var(--ink-2);font-size:.857rem}
-header a.src{margin-left:auto;color:var(--ink-2);font-size:.857rem;text-decoration:none;display:inline-flex;align-items:center;gap:.286rem;border:1px solid var(--rule);border-radius:4px;padding:.286rem .571rem}
+header a.src{margin-inline-start:auto;color:var(--ink-2);font-size:.857rem;text-decoration:none;display:inline-flex;align-items:center;gap:.286rem;border:1px solid var(--rule);border-radius:4px;padding:.286rem .571rem}
 header a.src svg{width:.929rem;height:.929rem}
 header a.src:hover{color:var(--ink)}
 header a.src:focus-visible{outline:2px solid var(--accent)}
@@ -37,6 +37,7 @@ header a.src:focus-visible{outline:2px solid var(--accent)}
 .ctl{display:grid;grid-template-columns:1fr auto 1fr;gap:.571rem .714rem;align-items:center;padding-top:.714rem;border-top:1px solid var(--rule);background:var(--paper)}
 .ctl button{min-height:max(3.143rem,3.15rem);background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:0 1rem;font:inherit;font-size:1.071rem;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:.429rem}
 .ctl button svg{width:1.286rem;height:1.286rem}
+:root[dir="rtl"] :is(#prev,#next,.bc .pic .nav button) svg{transform:scaleX(-1)} /* the chevrons point the way the text reads */
 .ctl button:disabled{opacity:.35;cursor:default}
 .ctl button:focus-visible,.ctl select:focus-visible{outline:2px solid var(--accent)}
 .ctl #stepno{font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:.929rem;text-align:center;white-space:nowrap}
@@ -47,35 +48,61 @@ nav.pages{overflow:auto;min-height:0}
 .where,nav.pages .sheet-head,.ctl .tabs{display:none}
 .peek,.legend-btn{display:none}
 aside.story{display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0}
-aside.story .text{overflow:auto;min-height:0;padding-right:.286rem}
-nav.pages .toggle-all{display:block;width:auto;margin:0 0 .429rem auto;background:none;border:1px solid var(--rule);border-radius:4px;color:var(--ink-2);font:inherit;font-size:.786rem;padding:3px .571rem;cursor:pointer}
+aside.story .text{overflow:auto;min-height:0;padding-inline-end:.286rem}
+nav.pages .toggle-all{display:block;width:auto;margin-block:0 .429rem;margin-inline:auto 0;background:none;border:1px solid var(--rule);border-radius:4px;color:var(--ink-2);font:inherit;font-size:.786rem;padding:3px .571rem;cursor:pointer}
 nav.pages .toggle-all:hover{color:var(--ink)}
 nav.pages .toggle-all:focus-visible{outline:2px solid var(--accent)}
-nav.pages summary{font-family:var(--display);font-size:.929rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:.571rem 0 2px;padding-left:calc(var(--depth,0)*.857rem);cursor:pointer;list-style:none;display:flex;align-items:center;gap:.429rem}
-nav.pages summary::before{content:"";width:0;height:0;border:4px solid transparent;border-left:5px solid var(--ink-2);transition:transform .15s}
+nav.pages summary{font-family:var(--display);font-size:.929rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:.571rem 0 2px;padding-inline-start:calc(var(--depth,0)*.857rem);cursor:pointer;list-style:none;display:flex;align-items:center;gap:.429rem}
+nav.pages summary::before{content:"";width:0;height:0;border:4px solid transparent;border-inline-start:5px solid var(--ink-2);transition:transform .15s}
 nav.pages details[open]>summary::before{transform:rotate(90deg)}
+:root[dir="rtl"] nav.pages details[open]>summary::before{transform:rotate(-90deg)}
 nav.pages summary:focus-visible{outline:2px solid var(--accent)}
-nav.pages button{display:block;width:100%;text-align:left;background:none;border:0;border-left:2px solid transparent;color:var(--ink);
-  font:inherit;padding:.429rem .714rem .429rem calc(.714rem + var(--depth,0)*.857rem);cursor:pointer;line-height:1.3}
+nav.pages button{display:block;width:100%;text-align:start;background:none;border:0;border-inline-start:2px solid transparent;color:var(--ink);
+  font:inherit;padding-block:.429rem;padding-inline:calc(.714rem + var(--depth,0)*.857rem) .714rem;cursor:pointer;line-height:1.3}
 nav.pages button .d{display:block;font-size:.786rem;color:var(--ink-2);font-variant-numeric:tabular-nums}
-nav.pages button[aria-current="true"]{border-left-color:var(--accent);background:var(--panel)}
+nav.pages button[aria-current="true"]{border-inline-start-color:var(--accent);background:var(--panel)}
 nav.pages button:focus-visible{outline:2px solid var(--accent)}
 .stage{position:relative;min-height:30rem;border:1px solid var(--rule);background:var(--sea);overflow:hidden}
 .map{position:absolute;inset:0;width:100%;height:100%}
-.legend{position:absolute;left:.714rem;bottom:.714rem;background:var(--panel);border:1px solid var(--rule);padding:.571rem .714rem;font-size:.786rem;
+.legend{position:absolute;inset-inline-start:.714rem;bottom:.714rem;background:var(--panel);border:1px solid var(--rule);padding:.571rem .714rem;font-size:.786rem;
   display:grid;gap:.286rem;max-width:15.714rem}
-.legend span{display:flex;align-items:center;gap:.429rem}
+.legend .lg{display:flex;align-items:center;gap:.429rem;background:none;border:0;border-radius:3px;padding:.143rem .214rem;margin:-.143rem -.214rem;
+  color:inherit;font:inherit;text-align:start;cursor:pointer}
+.legend .lg:hover,.legend .lg[aria-pressed="true"]{background:var(--paper-2)}
+.legend .lg:focus-visible{outline:2px solid var(--accent)}
+/* the name of the highlighted zone or route: beside the pointer, or pinned at the top of the map after a tap */
+.hl-label{position:absolute;z-index:4;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.857rem;line-height:1.3;
+  padding:.286rem .571rem;border-radius:4px;max-width:18rem;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.hl-label.pinned{top:calc(.714rem + max(40px,2.857rem) + .429rem);left:50%;transform:translateX(-50%);max-width:calc(100% - 1.143rem);text-align:center} /* below the 2D | 3D switch */
 .legend i{width:1rem;height:.714rem;display:inline-block;border:1px solid var(--ink-2);flex:none}
-.legend .r{width:1rem;height:0;border:0;border-top:2px solid var(--route)}
+.legend .r{width:1rem;height:0;border:0;border-top:2px solid var(--route);position:relative}
+.legend .r.arrow::after{content:"";position:absolute;inset-inline-end:-2px;top:-5px;border:4px solid transparent;border-inline-start:5px solid var(--route)}
 .legend .r.dashed{border-top-style:dashed}
-.credit{position:absolute;right:.714rem;bottom:.714rem;background:var(--panel);border:1px solid var(--rule);padding:3px .571rem;font-size:.786rem;color:var(--ink-2);pointer-events:auto}
+.credit{position:absolute;inset-inline-end:.714rem;bottom:.714rem;background:var(--panel);border:1px solid var(--rule);padding:3px .571rem;font-size:.786rem;color:var(--ink-2);pointer-events:auto;
+  display:flex;align-items:center;gap:.571rem}
 .credit a{color:inherit}
+.credit #mapdata{background:none;border:0;border-inline-start:1px solid var(--rule);padding:0;padding-inline-start:.571rem;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
+.credit #mapdata svg{display:none;width:1.143rem;height:1.143rem}
+.credit #mapdata:focus-visible{outline:2px solid var(--accent)}
+/* the sources of the borders and the relief, opened from the credit */
+.credits{position:absolute;inset-inline-end:-1px;bottom:calc(100% + .429rem);width:max-content;max-width:min(28rem,calc(100vw - 3rem));background:var(--panel);
+  border:1px solid var(--rule);border-radius:4px;padding:.571rem .714rem;box-shadow:0 2px 10px rgba(0,0,0,.2);line-height:1.4}
+.credits h4{margin:0 0 .286rem;font-size:.786rem;letter-spacing:.06em;text-transform:uppercase}
+.credits ul{margin:0;padding-inline-start:1rem;display:grid;gap:.286rem}
+.credits .made{display:none;margin:0 0 .429rem}
+/* map tools: the 2D | 3D switch at the top of the map, joined on phones by the Legend button */
+.maptools{position:absolute;top:.714rem;inset-inline-end:.714rem;z-index:3;display:flex;gap:.429rem;align-items:flex-start}
+.view{display:flex;background:var(--panel);border:1px solid var(--rule);border-radius:6px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.view button{min-width:max(44px,3.143rem);min-height:calc(max(40px,2.857rem) - 2px);padding:0 .571rem;border:0;background:none;color:var(--ink);font:inherit;font-size:.929rem;font-weight:600;cursor:pointer}
+.view button + button{border-inline-start:1px solid var(--rule)}
+.view button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.view button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .fail{position:absolute;inset:0;display:grid;place-items:center;padding:1.714rem;text-align:center;color:var(--ink-2)}
 aside.story .date{font-size:.857rem;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-variant-numeric:tabular-nums}
 aside.story h2{font-size:1.714rem;margin:.286rem 0 .714rem;line-height:1.15}
 aside.story p{margin:0 0 .714rem;max-width:62ch}
 aside.story h3{font-size:.929rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin-top:1.286rem;border-top:1px solid var(--rule);padding-top:.714rem}
-aside.story ol{padding-left:1.286rem;margin:.429rem 0;color:var(--ink-2);font-size:.857rem}
+aside.story ol{padding-inline-start:1.286rem;margin:.429rem 0;color:var(--ink-2);font-size:.857rem}
 aside.story li{margin-bottom:.286rem}
 aside.story figure{margin:1rem 0;max-width:62ch}
 aside.story figure img{display:block;width:100%;border:1px solid var(--rule);cursor:zoom-in}
@@ -120,11 +147,11 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
 .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip{align-self:flex-start;margin-left:1rem}
 .maplibregl-popup-anchor-top-right .maplibregl-popup-tip,.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip{align-self:flex-end;margin-right:1rem}
 .maplibregl-popup-content{position:relative;pointer-events:auto;background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;box-shadow:0 4px 18px rgba(0,0,0,.3);padding:0;width:min(28.5rem,calc(100vw - 3.429rem))}
-.maplibregl-popup-close-button{position:absolute;right:.429rem;top:.429rem;width:1.857rem;height:1.857rem;border:0;border-radius:3px;background:none;color:var(--ink-2);font:18px/1 var(--body);cursor:pointer}
+.maplibregl-popup-close-button{position:absolute;inset-inline-end:.429rem;top:.429rem;width:1.857rem;height:1.857rem;border:0;border-radius:3px;background:none;color:var(--ink-2);font:18px/1 var(--body);cursor:pointer}
 .maplibregl-popup-close-button:hover{color:var(--ink);background:var(--paper-2)}
 .maplibregl-popup-close-button:focus-visible{outline:2px solid var(--accent)}
 .bc{font-size:.929rem;line-height:1.4;max-height:min(40rem,70vh);overflow:auto}
-.bc header{display:flex;gap:.714rem;align-items:center;padding:.857rem 2.571rem .714rem 1rem;border-bottom:1px solid var(--rule)}
+.bc header{display:flex;gap:.714rem;align-items:center;padding-block:.857rem .714rem;padding-inline:1rem 2.571rem;border-bottom:1px solid var(--rule)}
 .bc header .ic{flex:none;width:2.143rem;height:2.143rem;border-radius:50%;background:var(--accent);color:var(--paper);display:grid;place-items:center}
 .bc header .ic svg{width:1.286rem;height:1.286rem}
 .bc header h4{font-family:var(--display);font-weight:500;font-size:1.214rem;margin:0;line-height:1.2}
@@ -132,13 +159,14 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
 .bc .result{padding:.571rem 1rem;border-bottom:1px solid var(--rule);display:flex;gap:.571rem;align-items:baseline}
 .bc .result b{font-size:.786rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
 .bc .sides{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0;border-bottom:1px solid var(--rule)}
-.bc .side{padding:.714rem 1rem;border-left:3px solid var(--c,var(--rule))}
+.bc .side{padding:.714rem 1rem;border-inline-start:3px solid var(--c,var(--rule))}
 .bc .side + .side{border-top:0;box-shadow:-1px 0 0 var(--rule)}
+:root[dir="rtl"] .bc .side + .side{box-shadow:1px 0 0 var(--rule)}
 .bc .side h5{margin:0 0 .429rem;font-size:.929rem;font-weight:600}
 .bc .side dl{margin:0;display:grid;gap:.286rem}
 .bc .side dt{font-size:.786rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
 .bc .side dd{margin:0}
-.bc .side ul{margin:0;padding-left:1.143rem}
+.bc .side ul{margin:0;padding-inline-start:1.143rem}
 .bc .pic{margin:0;border-bottom:1px solid var(--rule)}
 .bc .pic .slide{height:15rem;background:var(--paper-2)}
 .bc .pic img{display:block;width:100%;height:100%;object-fit:contain;cursor:zoom-in}
@@ -159,7 +187,7 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
 .lightbox img{max-width:100%;max-height:70vh;object-fit:contain;border:4px solid var(--panel);background:var(--panel)}
 .lightbox figcaption{color:#efe9da;font-size:.929rem;line-height:1.4}
 .lightbox figcaption small{display:block;color:#b8b09c;font-size:.786rem}
-.lightbox button{position:absolute;top:.714rem;right:.714rem;background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:.286rem .714rem;font:inherit;cursor:pointer}
+.lightbox button{position:absolute;top:.714rem;inset-inline-end:.714rem;background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:.286rem .714rem;font:inherit;cursor:pointer}
 .lightbox button:focus-visible{outline:2px solid var(--accent)}
 /* minimal maplibre css */
 .maplibregl-map{font:12px/20px sans-serif;overflow:hidden;position:relative;-webkit-tap-highlight-color:rgb(0 0 0/0)}
@@ -180,22 +208,29 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
   aside.story .text{grid-row:2;grid-column:1;z-index:2;background:var(--paper);overflow:auto;padding:.571rem .143rem 1.143rem}
   body[data-tab="map"] aside.story .text{display:none}
   /* in the text view the map's own overlays step aside; they sit above the text in the stacking order otherwise */
-  body[data-tab="text"] :is(.peek,.legend-btn,.legend,.credit,.maplibregl-popup){display:none}
+  body[data-tab="text"] :is(.peek,.maptools,.legend,.credit,.maplibregl-popup,.hl-label){display:none}
+  .hl-label.pinned{top:calc(.571rem + max(40px,2.857rem) + .429rem)} /* below the map tools and the credit */
   /* the peek card: the first two lines of the page's text over the bottom of the map; a tap opens the text */
-  .peek{display:block;position:absolute;left:.571rem;right:.571rem;bottom:.571rem;z-index:3;background:var(--panel);border:1px solid var(--rule);border-radius:8px;
-    box-shadow:0 2px 10px rgba(0,0,0,.25);padding:.714rem 2.857rem .714rem .857rem;cursor:pointer}
+  .peek{display:block;position:absolute;inset-inline:.571rem;bottom:.571rem;z-index:3;background:var(--panel);border:1px solid var(--rule);border-radius:8px;
+    box-shadow:0 2px 10px rgba(0,0,0,.25);padding-block:.714rem;padding-inline:.857rem 2.857rem;cursor:pointer}
   .peek[hidden]{display:none}
   .peek p{margin:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.45}
   .peek .more{display:inline-block;margin-top:.286rem;color:var(--accent);font-weight:600;font-size:.929rem}
-  .peek .close{position:absolute;top:.286rem;right:.286rem;width:max(44px,3.143rem);height:max(44px,3.143rem);border:0;background:none;color:var(--ink-2);font-size:1.429rem;line-height:1;cursor:pointer}
+  .peek .close{position:absolute;top:.286rem;inset-inline-end:.286rem;width:max(44px,3.143rem);height:max(44px,3.143rem);border:0;background:none;color:var(--ink-2);font-size:1.429rem;line-height:1;cursor:pointer}
   .peek:focus-visible,.peek .close:focus-visible{outline:2px solid var(--accent)}
-  /* the legend folds into a button at the top of the map, and the credit moves up beside it */
-  .legend-btn{display:inline-flex;position:absolute;top:.571rem;left:.571rem;z-index:3;min-height:max(40px,2.857rem);align-items:center;padding:0 .857rem;
+  /* the legend folds into a button at the top of the map with the 2D | 3D switch beside it; the credit shrinks to a button */
+  .maptools{top:.571rem;inset-inline:.571rem auto}
+  .legend-btn{display:inline-flex;min-height:max(40px,2.857rem);align-items:center;padding:0 .857rem;
     background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:6px;font:inherit;font-size:.929rem;cursor:pointer}
   .legend-btn[hidden]{display:none}
-  .legend{top:calc(.571rem + max(40px,2.857rem) + .429rem);bottom:auto;left:.571rem;z-index:3;max-width:calc(100% - 1.143rem)}
+  .legend{top:calc(.571rem + max(40px,2.857rem) + .429rem);bottom:auto;inset-inline-start:.571rem;z-index:3;max-width:calc(100% - 1.143rem)}
   body:not(.legend-open) .legend{display:none}
-  .credit{top:.571rem;bottom:auto}
+  .credit{top:.571rem;bottom:auto;inset-inline-end:.571rem;padding:0;border:0;background:none}
+  .credit #made{display:none}
+  .credit #mapdata{display:grid;place-items:center;width:max(44px,3.143rem);height:max(40px,2.857rem);padding:0;background:var(--panel);border:1px solid var(--rule);border-radius:6px;color:var(--ink-2)}
+  .credit #mapdata svg{display:block} .credit #mapdata span{display:none}
+  .credits{top:calc(100% + .429rem);bottom:auto;inset-inline-end:0}
+  .credits .made{display:block}
   .lightbox{position:fixed;z-index:30}
   /* the bar: Prev, the Map | Text switch, Next; then language, page count, theme */
   .ctl{grid-template-areas:"prev tabs next" "lang no theme";grid-template-columns:1fr auto 1fr}
@@ -203,14 +238,14 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
   .ctl .prefs{display:contents} .ctl #lang{grid-area:lang} .ctl #theme{grid-area:theme}
   .ctl .tabs{grid-area:tabs;display:flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
   .ctl .tabs button{border:0;border-radius:0;min-width:4.6rem;padding:0 .714rem}
-  .ctl .tabs button + button{border-left:1px solid var(--rule)}
+  .ctl .tabs button + button{border-inline-start:1px solid var(--rule)}
   .ctl .tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper)}
-  .ctl{position:fixed;left:0;right:0;bottom:0;z-index:6;padding:.571rem 1.143rem calc(.571rem + env(safe-area-inset-bottom, 0px));border-top:1px solid var(--rule);box-shadow:0 -2px 10px rgba(0,0,0,.12)}
+  .ctl{position:fixed;inset-inline:0;bottom:0;z-index:6;padding:.571rem 1.143rem calc(.571rem + env(safe-area-inset-bottom, 0px));border-top:1px solid var(--rule);box-shadow:0 -2px 10px rgba(0,0,0,.12)}
   /* the chronology gives way to one line: where in the story you are, and a button for the full contents */
   .where{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.143rem .857rem;align-items:center;padding-bottom:.571rem;border-bottom:1px solid var(--rule)}
   .where .crumbs{grid-column:1;font-size:.786rem;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .where .here{grid-column:1;font-weight:600;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .where .here small{font-weight:400;color:var(--ink-2);margin-right:.429rem;font-variant-numeric:tabular-nums}
+  .where .here small{font-weight:400;color:var(--ink-2);margin-inline-end:.429rem;font-variant-numeric:tabular-nums}
   .where button{grid-column:2;grid-row:1/3;min-height:max(44px,3.143rem);background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:0 .857rem;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:.429rem}
   .where button svg{width:1.143rem;height:1.143rem}
   .where button:focus-visible{outline:2px solid var(--accent)}
@@ -242,9 +277,10 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
   <nav class="pages" id="nav"></nav>
   <section class="stage">
     <div id="map" class="map"></div>
-    <button type="button" class="legend-btn" id="legend-btn"></button>
+    <div class="maptools"><button type="button" class="legend-btn" id="legend-btn"></button><div class="view" id="view" role="group" hidden><button type="button" data-view="2d" aria-pressed="true"></button><button type="button" data-view="3d" aria-pressed="false"></button></div></div>
     <div class="legend" id="legend"></div>
-    <div class="credit" id="credit"></div>
+    <div class="hl-label" id="hl-label" hidden></div>
+    <div class="credit" id="credit"><span id="made"></span><button type="button" id="mapdata" aria-expanded="false" aria-controls="credits"></button><div class="credits" id="credits" hidden></div></div>
     <div class="peek" id="peek" role="button" tabindex="0"><p id="peek-text"></p><span class="more" id="peek-more"></span><button type="button" class="close" id="peek-close">×</button></div>
     <div class="lightbox" id="lightbox" hidden>
       <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
@@ -363,7 +399,7 @@ function battleCard(b){
   const pic = i => `<img src="${esc(pics[i].src)}" alt="${esc(L(pics[i].caption))}" data-img="${esc(b.images[i])}">`;
   const cap = i => esc(L(pics[i].caption));
   el.innerHTML = `<header><span class="ic">${ICONS.swords}</span><div><h4>${esc(L(b.name))}</h4><small>${esc(L(b.date))}</small></div></header>
-    ${pics.length ? `<figure class="pic"><div class="slide">${pic(0)}</div><figcaption>${cap(0)}</figcaption>${pics.length > 1 ? `<div class="nav"><button type="button" data-dir="-1" aria-label="previous">${ICONS['chevron-left']}</button><span class="n">1 / ${pics.length}</span><button type="button" data-dir="1" aria-label="next">${ICONS['chevron-right']}</button></div>` : ''}</figure>` : ''}
+    ${pics.length ? `<figure class="pic"><div class="slide">${pic(0)}</div><figcaption>${cap(0)}</figcaption>${pics.length > 1 ? `<div class="nav"><button type="button" data-dir="-1" aria-label="${esc(T().previous_image)}">${ICONS['chevron-left']}</button><span class="n">1 / ${pics.length}</span><button type="button" data-dir="1" aria-label="${esc(T().next_image)}">${ICONS['chevron-right']}</button></div>` : ''}</figure>` : ''}
     ${b.result ? `<div class="result"><b>${esc(T().result)}</b><span>${esc(L(b.result))}</span></div>` : ''}
     <div class="sides">${b.sides.map(side).join('')}</div>
     ${b.source ? `<footer><a href="${esc(b.source)}" target="_blank" rel="noopener">${esc(T().source)} ${ICONS['external-link']}</a></footer>` : ''}`;
@@ -405,36 +441,60 @@ function restoreNudge(){
   if (c && ML.map) ML.map.easeTo({ center: c, duration: reduced ? 0 : 400 });
 }
 
-let hillCanvas = null;
-const hillReady = new Promise(res => { const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0); hillCanvas = c; res(); }; img.onerror = () => res(); img.src = B.hill.src; });
+// ---------- terrain ----------
+// The build cut elevation tiles for the story's extent at low zoom and for each page's area at the zooms it opens
+// at. The map asks only for those; a refused tile makes it draw the parent tile instead.
+const hasTile = (z, x, y) => (B.terrain.ranges[z] ?? []).some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+if (window.maplibregl) maplibregl.addProtocol('dem', async (params, abort) => {
+  const [z, x, y] = params.url.slice('dem://'.length).split('/').map(Number);
+  if (!hasTile(z, x, y)) throw new Error('no elevation tile');
+  const res = await fetch(B.terrain.tiles.replace('{z}', z).replace('{x}', x).replace('{y}', y), { signal: abort.signal });
+  if (!res.ok) throw new Error(`elevation tile ${z}/${x}/${y}: HTTP ${res.status}`);
+  return { data: await res.arrayBuffer() };
+});
+const hexRgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+const rgba = (hex, a) => `rgba(${hexRgb(hex).join(',')},${a})`;
+// relief in the theme's colours: on light paper the shadows take the ink and lit slopes the paper, on dark paper
+// the shadows go black and lit slopes take a little of the light ink
+function hillPaint(){
+  const paper = css('--paper'), ink = css('--ink'), [r, g, b] = hexRgb(paper), dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
+  return { 'hillshade-exaggeration': 0.7, 'hillshade-shadow-color': dark ? 'rgba(0,0,0,0.6)' : rgba(ink, 0.5),
+    'hillshade-highlight-color': dark ? rgba(ink, 0.12) : rgba(paper, 0.55), 'hillshade-accent-color': dark ? 'rgba(0,0,0,0.3)' : rgba(ink, 0.2) };
+}
 
 // ---------- map ----------
-const ML = { map:null, ready:false, markers:{}, anim:{}, shown:{} };
+const ML = { map:null, ready:false, markers:{}, anim:{}, shown:{}, camera:0 };
 function mapInit(){
-  if (!window.maplibregl) { $('map').innerHTML = '<div class="fail">MapLibre GL did not load from the CDN.</div>'; return; }
+  if (!window.maplibregl) { $('map').innerHTML = `<div class="fail">${esc(T().map_failed_cdn)}</div>`; return; }
   const [w, s, e, n] = B.extent;
   let m;
   try {
     m = new maplibregl.Map({
       container:'map', attributionControl:false,
       style:{ version:8, sources:{}, ...(B.labels ? { glyphs: GLYPHS } : {}), layers:[{ id:'bg', type:'background', paint:{ 'background-color': css('--sea') } }] },
-      bounds:[[w, s], [e, n]], minZoom:3.5, maxZoom:11, dragRotate:false, pitchWithRotate:false, keyboard:false // arrow keys step pages, never pan
+      bounds:[[w, s], [e, n]], minZoom:3.5, maxZoom:11, dragRotate:false, touchPitch:false, keyboard:false // arrow keys step pages, never pan
     });
+    m.touchZoomRotate.disableRotation(); // turning and tilting are for the 3D view, see freeCamera
   } catch (err) { // no WebGL: keep the text and navigation working without the map
-    $('map').innerHTML = '<div class="fail">The map needs WebGL, which this browser did not provide.</div>'; return;
+    $('map').innerHTML = `<div class="fail">${esc(T().map_failed_webgl)}</div>`; return;
   }
   ML.map = m;
   m.on('movestart', e => { if (e.originalEvent) ML.beforeNudge = null; });
-  m.on('load', async () => {
-    await hillReady;
+  m.on('error', e => { if (!e.sourceId?.startsWith('dem')) console.error(e.error ?? e); }); // a refused elevation tile is expected
+  // pointing at a zone or a route highlights it; on touch screens a tap does, and a tap on empty map clears it
+  let pending = null;
+  m.on('mousemove', e => { if (!canHover.matches || !ML.ready) return; const first = !pending; pending = e; if (first) requestAnimationFrame(() => { const ev = pending; pending = null; const h = !onOverlay(ev) && hitAt(ev.point); h ? setHighlight(h.kind, h.id, ev.point) : clearHighlight(); }); });
+  m.on('mouseout', () => { if (canHover.matches) clearHighlight(); });
+  m.on('click', e => { if (canHover.matches || !ML.ready || onOverlay(e)) return; const h = hitAt(e.point); h ? setHighlight(h.kind, h.id, null) : clearHighlight(); });
+  m.on('load', () => {
+    m.setPaintProperty('bg', 'background-color', css('--sea')); // the theme may have changed while the map loaded
     m.addSource('countries', { type:'geojson', data: countries });
     m.addSource('land', { type:'geojson', data: B.land });
     m.addLayer({ id:'land', type:'fill', source:'countries', paint:{ 'fill-color': landFill() } });
-    if (hillCanvas) {
-      const hb = B.hill.bbox;
-      m.addSource('hill', { type:'canvas', canvas: hillCanvas, animate:false, coordinates:[[hb.w, hb.n], [hb.e, hb.n], [hb.e, hb.s], [hb.w, hb.s]] });
-      m.addLayer({ id:'hill', type:'raster', source:'hill', paint:{ 'raster-opacity':0.85, 'raster-fade-duration':0 } });
-    }
+    // one source shades the relief, another lifts the 3D terrain; MapLibre draws both better when they are separate
+    const dem = { type:'raster-dem', tiles:['dem://{z}/{x}/{y}'], tileSize:256, encoding:'terrarium', maxzoom: B.terrain.maxzoom };
+    m.addSource('dem', dem); m.addSource('dem-3d', dem);
+    m.addLayer({ id:'hill', type:'hillshade', source:'dem', paint: hillPaint() });
     for (const f in B.families) if (B.families[f].pattern) m.addImage('pat-' + f, patternImage(B.families[f].pattern, css(colorVar(f))));
     for (const id in B.zones) {
       const f = B.zones[id].family, c = css(colorVar(f));
@@ -445,12 +505,16 @@ function mapInit(){
     }
     m.addLayer({ id:'borders', type:'line', source:'countries', paint:{ 'line-color': css('--border'), 'line-width':0.8, 'line-dasharray':[2, 2] } });
     m.addLayer({ id:'land-outline', type:'line', source:'land', paint:{ 'line-color': css('--ink'), 'line-width':1.2 } });
+    m.addImage('route-arrow', arrowImage(), { pixelRatio: 2 });
     for (const id in B.routes) {
       m.addSource('r-' + id, { type:'geojson', data: routeFeature(id, []) });
-      m.addLayer({ id:'rc-' + id, type:'line', source:'r-' + id, layout:{ 'line-cap':'round', 'line-join':'round' }, paint:{ 'line-color': css('--paper'), 'line-width':5 } });
-      const paint = { 'line-color': css('--route'), 'line-width':2.5 };
+      const offset = B.routes[id].offset; // line-offset and the arrows' offset both count to the right of travel
+      m.addLayer({ id:'rc-' + id, type:'line', source:'r-' + id, layout:{ 'line-cap':'round', 'line-join':'round' }, paint:{ 'line-color': css('--paper'), 'line-width':5, 'line-offset': offset } });
+      const paint = { 'line-color': css('--route'), 'line-width':2.5, 'line-offset': offset };
       if (B.routes[id].style === 'dashed') paint['line-dasharray'] = [2, 1.5];
       m.addLayer({ id:'r-' + id, type:'line', source:'r-' + id, layout:{ 'line-cap':'round', 'line-join':'round' }, paint });
+      if (B.routes[id].arrows) m.addLayer({ id:'ra-' + id, type:'symbol', source:'r-' + id,
+        layout:{ 'symbol-placement':'line', 'symbol-spacing':70, 'icon-image':'route-arrow', 'icon-rotation-alignment':'map', 'icon-allow-overlap':true, 'icon-ignore-placement':true, 'icon-keep-upright':false, 'icon-offset':[0, offset] } });
     }
     m.addSource('emblem', { type:'geojson', data: { type:'FeatureCollection', features: [] } });
     m.addLayer({ id:'emblem', type:'fill', source:'emblem', paint:{ 'fill-color': ['get', 'color'], 'fill-opacity': 0.92 } });
@@ -469,33 +533,120 @@ function mapInit(){
     ML.ready = true; mapApply(PAGES[cur], true);
   });
 }
+// a chevron pointing along +x, the way a line symbol is turned to follow its line; drawn in the theme's route
+// colour over a paper coloured outline, at twice the resolution for sharp screens
+function arrowImage(){
+  const s = 2, w = 16 * s, c = document.createElement('canvas'); c.width = w; c.height = w;
+  const g = c.getContext('2d'); g.lineCap = 'round'; g.lineJoin = 'round';
+  const chevron = () => { g.beginPath(); g.moveTo(5 * s, 3.5 * s); g.lineTo(11 * s, 8 * s); g.lineTo(5 * s, 12.5 * s); g.stroke(); };
+  g.strokeStyle = css('--paper'); g.lineWidth = 5.5 * s; chevron();
+  g.strokeStyle = css('--route'); g.lineWidth = 2.6 * s; chevron();
+  return g.getImageData(0, 0, w, w);
+}
 function mapTheme(){
   const m = ML.map; if (!m || !ML.ready) return;
   m.setPaintProperty('bg', 'background-color', css('--sea'));
   m.setPaintProperty('land', 'fill-color', landFill());
+  for (const [k, v] of Object.entries(hillPaint())) m.setPaintProperty('hill', k, v);
   if (B.labels) { m.setPaintProperty('labels', 'text-color', css('--ink-2')); m.setPaintProperty('labels', 'text-halo-color', css('--paper-2')); }
   m.setPaintProperty('borders', 'line-color', css('--border'));
   m.setPaintProperty('land-outline', 'line-color', css('--ink'));
   for (const id in B.zones) { const c = css(colorVar(B.zones[id].family)); m.setPaintProperty('z-' + id, 'fill-color', c); m.setPaintProperty('zl-' + id, 'line-color', c); }
   for (const f in B.families) if (B.families[f].pattern) m.updateImage('pat-' + f, patternImage(B.families[f].pattern, css(colorVar(f))));
   for (const id in B.routes) { m.setPaintProperty('rc-' + id, 'line-color', css('--paper')); m.setPaintProperty('r-' + id, 'line-color', css('--route')); }
+  if (m.hasImage('route-arrow')) m.updateImage('route-arrow', arrowImage());
   for (const id in B.battles) if (B.battles[id].front) m.setPaintProperty('bf-' + id, 'line-color', css('--accent'));
+}
+// zone looks: off the page, on it, highlighted, or faded behind a highlighted neighbour
+const ZONE_LOOK = { off: [0, 0, 0, 1], base: [0.38, 0.7, 0.9, 1], on: [0.62, 0.95, 1, 2.5], dim: [0.16, 0.3, 0.4, 1] };
+function zonePaint(id, look, ms){
+  const m = ML.map, [fill, pattern, line, width] = ZONE_LOOK[look];
+  m.setPaintProperty('z-' + id, 'fill-opacity-transition', { duration: ms }); m.setPaintProperty('z-' + id, 'fill-opacity', fill);
+  if (m.getLayer('zp-' + id)) { m.setPaintProperty('zp-' + id, 'fill-opacity-transition', { duration: ms }); m.setPaintProperty('zp-' + id, 'fill-opacity', pattern); }
+  m.setPaintProperty('zl-' + id, 'line-opacity-transition', { duration: ms }); m.setPaintProperty('zl-' + id, 'line-opacity', line);
+  m.setPaintProperty('zl-' + id, 'line-width', width);
+}
+function routeWidth(id, on){ ML.map.setPaintProperty('r-' + id, 'line-width', on ? 4.5 : 2.5); ML.map.setPaintProperty('rc-' + id, 'line-width', on ? 8 : 5); }
+// point: where to show the name beside the pointer; null pins it at the top of the map; label false shows none
+function setHighlight(kind, id, point, label = true){
+  const m = ML.map; if (!m || !ML.ready) return;
+  const page = PAGES[cur], k = kind + ':' + id;
+  if (ML.hl !== k) {
+    ML.hl = k;
+    for (const z of page.zones) zonePaint(z, kind === 'zone' ? (z === id ? 'on' : 'dim') : 'base', 150);
+    for (const r of page.routes) routeWidth(r, kind === 'route' && r === id);
+    legend.querySelectorAll('.lg').forEach(b => b.setAttribute('aria-pressed', b.dataset.hl === k));
+  }
+  const lab = $('hl-label');
+  lab.hidden = !label; if (!label) return;
+  lab.textContent = L(kind === 'zone' ? B.zones[id].name : B.routes[id].name);
+  lab.classList.toggle('pinned', !point);
+  if (point) { lab.style.left = (point.x + 14) + 'px'; lab.style.top = (point.y + 14) + 'px'; } else { lab.style.left = ''; lab.style.top = ''; }
+}
+function clearHighlight(){
+  if (!ML.hl || !ML.map) return;
+  ML.hl = null; $('hl-label').hidden = true;
+  const page = PAGES[cur];
+  for (const z of page.zones) zonePaint(z, 'base', 150);
+  for (const r of page.routes) routeWidth(r, false);
+  legend.querySelectorAll('.lg').forEach(b => b.setAttribute('aria-pressed', 'false'));
+}
+// what lies under a point: a route within a few pixels first, since lines are thin, then the smallest zone
+// containing the point, the most specific one; the query counts each route's line-offset
+function hitAt(pt){
+  const m = ML.map, page = PAGES[cur], routes = page.routes.map(r => 'r-' + r), zoneLayers = page.zones.map(z => 'z-' + z);
+  // the box grows a pixel at a time, so of two routes drawn side by side the nearer one wins
+  for (let r = 0; r <= 6 && routes.length; r++) {
+    const route = m.queryRenderedFeatures(r ? [[pt.x - r, pt.y - r], [pt.x + r, pt.y + r]] : [pt.x, pt.y], { layers: routes })[0];
+    if (route) return { kind: 'route', id: route.properties.id };
+  }
+  const zones = zoneLayers.length ? m.queryRenderedFeatures([pt.x, pt.y], { layers: zoneLayers }).map(f => f.properties.id) : [];
+  zones.sort((a, b) => B.zones[a].area - B.zones[b].area);
+  return zones.length ? { kind: 'zone', id: zones[0] } : null;
+}
+const canHover = matchMedia('(hover: hover)');
+const onOverlay = e => e.originalEvent?.target?.closest?.('.maplibregl-marker, .maplibregl-popup');
+// A page with a camera opens tilted over the 3D terrain, unless the reader chose the flat map; every other view is
+// flat and north up. The terrain goes once the map has laid flat, so the flight down stays smooth.
+let view = pref('view', ['2d', '3d'], '3d');
+const tilted = page => !!page.camera && view === '3d';
+function camera(page, duration){
+  const m = ML.map, c = tilted(page) ? page.camera : null, token = ++ML.camera;
+  if (c) m.setTerrain({ source:'dem-3d', exaggeration: c.exaggeration });
+  else if (m.getTerrain()) m.once('moveend', () => { if (ML.camera === token) m.setTerrain(null); });
+  const bearing = c ? c.bearing : 0, pitch = c ? c.pitch : 0;
+  const cam = m.cameraForBounds([[page.bbox[0], page.bbox[1]], [page.bbox[2], page.bbox[3]]], { padding: fitPadding(), bearing, pitch });
+  m.flyTo({ center: cam.center, zoom: cam.zoom, bearing, pitch, duration });
+  freeCamera(!!c);
+}
+// in 3D the reader may turn and tilt: right drag or Ctrl drag with a mouse, two fingers on a touch screen
+function freeCamera(on){
+  const m = ML.map;
+  for (const h of [m.dragRotate, m.touchPitch]) on ? h.enable() : h.disable();
+  on ? m.touchZoomRotate.enableRotation() : m.touchZoomRotate.disableRotation();
+}
+function renderView(page){
+  $('view').hidden = !page.camera;
+  for (const b of $('view').querySelectorAll('button')) b.setAttribute('aria-pressed', b.dataset.view === view);
 }
 function mapApply(page, first){
   const m = ML.map; if (!m || !ML.ready) return;
-  m.fitBounds([[page.bbox[0], page.bbox[1]], [page.bbox[2], page.bbox[3]]], { padding: fitPadding(), duration: first ? 0 : DUR });
+  camera(page, first ? 0 : DUR);
+  renderView(page);
+  ML.hl = null; $('hl-label').hidden = true;
   for (const id in B.zones) {
     const on = page.zones.includes(id);
-    m.setPaintProperty('z-' + id, 'fill-opacity', on ? 0.38 : 0); m.setPaintProperty('zl-' + id, 'line-opacity', on ? 0.9 : 0);
-    if (m.getLayer('zp-' + id)) m.setPaintProperty('zp-' + id, 'fill-opacity', on ? 0.7 : 0);
+    zonePaint(id, on ? 'base' : 'off', 600);
   }
+  for (const id in B.routes) routeWidth(id, false);
+  const fresh = page.routes.filter(id => !ML.shown[id]);
   for (const id in B.routes) {
     const on = page.routes.includes(id); const src = m.getSource('r-' + id); const coords = B.routes[id].coordinates;
     cancelAnimationFrame(ML.anim[id]);
     if (!on) { src.setData(routeFeature(id, [])); ML.shown[id] = false; continue; }
     if (ML.shown[id]) { src.setData(routeFeature(id, coords)); continue; }
     ML.shown[id] = true;
-    const t0 = performance.now() + (first ? 0 : DUR * 0.6), len = DUR || 1;
+    const t0 = performance.now() + (first ? 0 : DUR * 0.6) + fresh.indexOf(id) * DUR, len = DUR || 1;
     const tick = now => { const t = Math.min(1, Math.max(0, (now - t0) / len)); src.setData(routeFeature(id, sliceRoute(coords, t))); if (t < 1) ML.anim[id] = requestAnimationFrame(tick); };
     ML.anim[id] = requestAnimationFrame(tick);
   }
@@ -534,7 +685,7 @@ function setTab(tab){
 }
 function renderChrome(){
   $('tab-map').textContent = T().tab_map; $('tab-text').textContent = T().tab_text;
-  document.documentElement.lang = lang;
+  document.documentElement.lang = lang; document.documentElement.dir = T().dir;
   document.title = L(B.title);
   $('title').textContent = L(B.title);
   $('back').textContent = L(B.site.title);
@@ -542,7 +693,11 @@ function renderChrome(){
   $('toast-close').textContent = T().close;
   $('hint').textContent = T().hint;
   if (B.site.source) { $('src').href = B.site.source; $('src').innerHTML = `${ICONS['external-link']} ${esc(T().story_source)}`; $('src').hidden = false; }
-  $('credit').innerHTML = credit(T());
+  $('made').innerHTML = credit(T());
+  $('mapdata').innerHTML = `${ICONS.info}<span>${esc(T().map_data)}</span>`; $('mapdata').setAttribute('aria-label', T().map_data);
+  $('credits').innerHTML = `<p class="made">${credit(T())}</p><h4>${esc(T().map_data)}</h4><ul>${B.terrain.credits.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`;
+  $('view').setAttribute('aria-label', T().map_view);
+  for (const b of $('view').querySelectorAll('button')) b.textContent = T()['view_' + b.dataset.view];
   $('prev').innerHTML = `${ICONS['chevron-left']} ${esc(T().prev)}`;
   $('next').innerHTML = `${esc(T().next)} ${ICONS['chevron-right']}`;
   $('lb-close').textContent = T().close;
@@ -614,8 +769,8 @@ function renderStory(p){
   const sources = p.sources[lang].length ? `<h3>${esc(T().sources)}</h3><ol>${p.sources[lang].map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : '';
   story.innerHTML = `<div class="date">${esc(L(p.date))}</div><h2>${esc(L(p.title))}</h2>${p.html[lang]}${sources}`;
   story.scrollTop = 0;
-  legend.innerHTML = p.zones.map(z => `<span><i style="${patternCss(B.zones[z].family)}"></i>${esc(L(B.zones[z].name))}</span>`).join('')
-    + p.routes.map(r => `<span><i class="r ${B.routes[r].style}"></i>${esc(L(B.routes[r].name))}</span>`).join('');
+  legend.innerHTML = p.zones.map(z => `<button type="button" class="lg" data-hl="zone:${esc(z)}" aria-pressed="false"><i style="${patternCss(B.zones[z].family)}"></i>${esc(L(B.zones[z].name))}</button>`).join('')
+    + p.routes.map(r => `<button type="button" class="lg" data-hl="route:${esc(r)}" aria-pressed="false"><i class="r ${B.routes[r].style}${B.routes[r].arrows ? ' arrow' : ''}"></i>${esc(L(B.routes[r].name))}</button>`).join('');
   legend.hidden = !legend.innerHTML;
   $('legend-btn').hidden = legend.hidden;
   renderPeek();
@@ -650,15 +805,29 @@ $('peek').onclick = () => setTab('text');
 $('peek').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab('text'); } };
 $('peek-close').onclick = e => { e.stopPropagation(); $('peek').hidden = true; };
 $('legend-btn').onclick = () => document.body.classList.toggle('legend-open');
+$('view').onclick = e => {
+  const b = e.target.closest('button'); if (!b || b.dataset.view === view) return;
+  view = b.dataset.view; savePref('view', view);
+  clearHighlight(); renderView(PAGES[cur]); camera(PAGES[cur], reduced ? 0 : 900);
+};
+const showCredits = open => { $('credits').hidden = !open; $('mapdata').setAttribute('aria-expanded', open); };
+$('mapdata').onclick = () => showCredits($('credits').hidden);
+document.addEventListener('click', e => { if (!$('credits').hidden && !e.target.closest('.credit')) showCredits(false); });
+const legendTarget = e => { const b = e.target.closest?.('.lg'); return b && b.dataset.hl.split(':'); };
+legend.addEventListener('mouseover', e => { const h = legendTarget(e); if (h && canHover.matches) setHighlight(h[0], h[1], null, false); });
+legend.addEventListener('mouseleave', () => { if (canHover.matches) clearHighlight(); });
+legend.addEventListener('focusin', e => { const h = legendTarget(e); if (h) setHighlight(h[0], h[1], null, false); });
+legend.addEventListener('focusout', e => { if (!legend.contains(e.relatedTarget)) clearHighlight(); });
+legend.addEventListener('click', e => { const h = legendTarget(e); if (!h || canHover.matches) return; setHighlight(h[0], h[1], null); document.body.classList.remove('legend-open'); });
 document.addEventListener('click', e => { const t = e.target.closest('[data-img]'); if (t) { e.stopPropagation(); openImage(t.dataset.img); } });
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.matches('[data-img]')) openImage(e.target.dataset.img);
-  if (e.key === 'Escape') { closeImage(); closeBattle(true); closeSheet(); }
-  if (e.target.closest('input,textarea,select')) return;
+  if (e.key === 'Escape') { closeImage(); closeBattle(true); closeSheet(); clearHighlight(); showCredits(false); }
+  if (e.target.closest?.('input,textarea,select')) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
     e.preventDefault(); // at either end the key does nothing, rather than scrolling the page or the map
-    if (e.key === 'ArrowRight' && cur < PAGES.length - 1) go(cur + 1);
-    if (e.key === 'ArrowLeft' && cur > 0) go(cur - 1);
+    const step = (e.key === 'ArrowRight') === (T().dir === 'ltr') ? 1 : -1; // right to left text reads forward to the left
+    if (PAGES[cur + step]) go(cur + step);
   }
 });
 $('lb-close').onclick = closeImage;

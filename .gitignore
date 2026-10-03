@@ -1,8 +1,9 @@
 node_modules/
 npm-debug.log*
 .DS_Store
-# build output and temp screenshots when harita is run inside this folder
+# build output, the elevation tile cache and temp screenshots when harita is run inside this folder
 dist/
+.cache/
 .tmp/
 # editor state
 .vscode/

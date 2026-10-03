@@ -14,6 +14,13 @@ export function flatten(obj, prefix = '', out = {}) {
   return out;
 }
 
+// { 'a.b': 'x' } -> { a: { b: 'x' } }
+export function unflatten(flat) {
+  const out = {};
+  for (const [k, v] of Object.entries(flat)) { const parts = k.split('.'); let o = out; parts.slice(0, -1).forEach(p => { o = o[p] = typeof o[p] === 'object' ? o[p] : {}; }); o[parts.at(-1)] = v; }
+  return out;
+}
+
 // Reads <dir>/<lang>.yaml for every language that has one.
 export function loadCatalogues(dir, langs, loadYaml) {
   const cats = {};
@@ -22,8 +29,8 @@ export function loadCatalogues(dir, langs, loadYaml) {
 }
 
 // One translator per story or site. tr(value, key) expands a field to one string per language and records
-// the key with its source text, so catalogues can be written and gaps reported. A shared field, such as a
-// citation or a photo credit, may be translated but is not counted as missing when it is not.
+// the key with its source text, so catalogues can be written and gaps reported. A shared field, a name, citation
+// or photo credit, may be translated but is not counted as missing when it is not.
 export function translator({ langs, defaultLang, catalogues, where, fail }) {
   const entries = new Map();
   const missing = Object.fromEntries(langs.map(l => [l, []]));
@@ -47,12 +54,13 @@ export function translator({ langs, defaultLang, catalogues, where, fail }) {
 // translations kept, keys that no longer exist moved to a commented block at the end.
 export function catalogueText(lang, entries, existing, heading) {
   const q = s => JSON.stringify(s ?? '');
-  const lines = [`# ${heading}`, `# Keys are stable ids, the comment above each one is the source text. Empty values fall back to the`, `# default language; harita build --strict turns them into errors. Regenerate with: harita i18n ${lang}`, ''];
+  const lines = [`# ${heading}`, `# Keys are stable ids, the comment above each one is the source text. Empty values fall back to the`, `# default language, and harita build --strict reports them. Regenerate with: harita i18n ${lang}`, ''];
   let filled = 0, total = 0;
   const emit = e => { const value = existing[e.key] ?? e.inline?.[lang] ?? ''; if (value && !e.shared) filled++; if (!e.shared) total++; lines.push(`# ${e.source.replace(/\n/g, ' ')}`, `${e.key}: ${q(value)}`, ''); };
   entries.filter(e => !e.shared).forEach(emit);
-  const shared = entries.filter(e => e.shared);
-  if (shared.length) { lines.push('# Citations and credits. Shown in the source language unless translated here; never counted as missing.', ''); shared.forEach(emit); }
+  // a name, citation or credit is listed only with its own form in the language, the rest show as in the source
+  const shared = entries.filter(e => e.shared && (existing[e.key] || e.inline?.[lang]));
+  if (shared.length) { lines.push('# Names, citations and credits with their own form in this language. Any other shows as written in the source.', ''); shared.forEach(emit); }
   const stale = Object.keys(existing).filter(k => !entries.some(e => e.key === k));
   if (stale.length) { lines.push('# No longer used by the content:'); for (const k of stale) lines.push(`# ${k}: ${q(existing[k])}`); lines.push(''); }
   return { text: lines.join('\n'), filled, total };

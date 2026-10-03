@@ -19,28 +19,33 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);f
 h1,h2{font-family:var(--display);font-weight:500;margin:0;text-wrap:balance}
 header{display:flex;align-items:center;gap:1.143rem;flex-wrap:wrap;border-bottom:1px solid var(--rule);padding-bottom:.714rem}
 header h1{font-size:1.857rem}
-header .controls{margin-left:auto;display:flex;gap:.571rem}
+header .controls{margin-inline-start:auto;display:flex;gap:.571rem}
 header a.contribute{color:var(--ink-2);font-size:.929rem;text-decoration:none;border:1px solid var(--rule);border-radius:4px;padding:.357rem .714rem;display:inline-flex;align-items:center}
 header a.contribute:hover{color:var(--ink)}
 header a.contribute:focus-visible{outline:2px solid var(--accent)}
 select#lang,select#theme{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:.357rem .571rem;font:inherit;cursor:pointer}
 select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--accent)}
 .intro{max-width:62ch;color:var(--ink-2);margin:0}
-.listbar{display:flex;justify-content:flex-end}
+.listbar{display:flex;justify-content:space-between;align-items:center;gap:.857rem;flex-wrap:wrap}
+.listbar input{flex:1;max-width:24rem;min-height:max(40px,2.857rem);background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:0 .857rem;font:inherit}
+.listbar input::placeholder{color:var(--ink-2)}
+.listbar input:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+.rows .empty{padding:1.143rem .571rem;color:var(--ink-2)}
 .listbar button,.toggle-all{background:none;border:1px solid var(--rule);border-radius:4px;color:var(--ink-2);font:inherit;font-size:.857rem;padding:.286rem .714rem;cursor:pointer}
 .listbar button:hover,.toggle-all:hover{color:var(--ink)}
 .listbar button:focus-visible,.toggle-all:focus-visible{outline:2px solid var(--accent)}
 .rows{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule)}
 .row{border-bottom:1px solid var(--rule)}
-.row > button{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:.286rem 1.143rem;align-items:baseline;width:100%;text-align:left;background:none;border:0;
+.row > button{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:.286rem 1.143rem;align-items:baseline;width:100%;text-align:start;background:none;border:0;
   color:var(--ink);font:inherit;padding:1rem .571rem;cursor:pointer}
 .row > button:hover{background:var(--panel)}
 .row > button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .row .span{grid-column:2;grid-row:1;font-size:.857rem;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-variant-numeric:tabular-nums}
 .row h2{grid-column:3;grid-row:1;font-size:1.429rem;line-height:1.2}
 .row .brief{grid-column:2/4;grid-row:2;color:var(--ink-2);font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.row .chev{grid-column:1;grid-row:1/3;align-self:center;width:0;height:0;border:5px solid transparent;border-left:6px solid var(--ink-2);transition:transform .15s}
+.row .chev{grid-column:1;grid-row:1/3;align-self:center;width:0;height:0;border:5px solid transparent;border-inline-start:6px solid var(--ink-2);transition:transform .15s}
 .row > button[aria-expanded="true"] .chev{transform:rotate(90deg)}
+:root[dir="rtl"] .row > button[aria-expanded="true"] .chev{transform:rotate(-90deg)}
 .row > button[aria-expanded="true"] .brief{visibility:hidden}
 .row .detail{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:1.429rem;padding:0 .571rem 1.286rem}
 .row .detail p{margin:0;max-width:62ch}
@@ -69,7 +74,7 @@ select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--acc
     <div class="controls"><a class="contribute" id="contribute" target="_blank" rel="noopener" hidden></a><select id="lang"></select><select id="theme"></select></div>
   </header>
   <p class="intro" id="intro"></p>
-  <div class="listbar"><button type="button" id="toggle-all"></button></div>
+  <div class="listbar"><input type="search" id="search" autocomplete="off" spellcheck="false"><button type="button" id="toggle-all"></button></div>
   <ul class="rows" id="rows"></ul>
   <footer class="credit" id="credit"></footer>
 </div>
@@ -83,18 +88,25 @@ let palette = pref('palette', S.themes.map(t => t.id), S.defaultTheme);
 document.documentElement.dataset.palette = palette;
 const L = field => pick(field, lang, S.defaultLanguage);
 const open = new Set();
-const allOpen = () => S.stories.every(s => open.has(s.id));
+// search: a case insensitive substring of the title in the current language, folded by that language's rules
+let query = '';
+const visible = () => { const q = query.trim().toLocaleLowerCase(lang); return q ? S.stories.filter(s => L(s.title).toLocaleLowerCase(lang).includes(q)) : S.stories; };
+const allOpen = () => visible().every(s => open.has(s.id));
 function render(){
-  document.documentElement.lang = lang;
+  document.documentElement.lang = lang; document.documentElement.dir = S.ui[lang].dir;
   document.title = L(S.title);
   $('title').textContent = L(S.title);
   $('intro').textContent = L(S.intro);
   if (S.repository) { $('contribute').href = S.repository; $('contribute').textContent = S.ui[lang].contribute; $('contribute').hidden = false; }
   fillSelect($('lang'), S.languages.map(l => ({ value: l, text: S.ui[l].name ?? l })), lang, S.ui[lang].language);
   fillSelect($('theme'), S.themes.map(t => ({ value: t.id, text: pick(t.name, lang, S.defaultLanguage, t.id) })), palette, S.ui[lang].theme);
+  $('search').placeholder = S.ui[lang].search_stories; $('search').setAttribute('aria-label', S.ui[lang].search_stories);
   $('toggle-all').textContent = toggleLabel(S.ui[lang], allOpen());
   $('credit').innerHTML = credit(S.ui[lang]);
-  $('rows').innerHTML = S.stories.map((s, i) => `
+  const shown = visible();
+  $('toggle-all').hidden = !shown.length;
+  if (!shown.length) { $('rows').innerHTML = `<li class="empty">${esc(S.ui[lang].no_match.replace('{q}', query.trim()))}</li>`; return; }
+  $('rows').innerHTML = shown.map((s, i) => `
     <li class="row">
       <button type="button" aria-expanded="${open.has(s.id)}" aria-controls="d-${i}" data-id="${esc(s.id)}">
         <span class="span">${esc(L(s.span))}</span><h2>${esc(L(s.title))}</h2><span class="chev"></span>
@@ -116,7 +128,9 @@ $('rows').addEventListener('click', e => {
   b.setAttribute('aria-expanded', open.has(id)); $(b.getAttribute('aria-controls')).hidden = !open.has(id);
   $('toggle-all').textContent = toggleLabel(S.ui[lang], allOpen());
 });
-$('toggle-all').onclick = () => { const all = allOpen(); S.stories.forEach(s => all ? open.delete(s.id) : open.add(s.id)); render(); };
+$('toggle-all').onclick = () => { const all = allOpen(); visible().forEach(s => all ? open.delete(s.id) : open.add(s.id)); render(); };
+$('search').oninput = e => { query = e.target.value; render(); };
+$('search').onkeydown = e => { if (e.key === 'Escape' && query) { e.target.value = query = ''; render(); } };
 $('theme').onchange = e => { palette = e.target.value; applyPalette(palette); };
 $('lang').onchange = e => { lang = e.target.value; savePref('lang', lang); setHash('#' + lang, false); render(); };
 render();

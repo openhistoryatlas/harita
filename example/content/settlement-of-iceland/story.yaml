@@ -7,7 +7,6 @@ default_language: en
 extent: [-25, 63, -13, 67]        # west, south, east, north
 land: [Iceland]                   # zones are clipped to these countries
 countries: [Iceland]              # drawn with borders
-hillshade: hillshade.png          # in geo/; the example ships a blank raster, run harita hillshade for a real one
 families:
   settled: { priority: 0, color: "#2f6a9f", color_dark: "#6fa3d6" }
 smoothing: 4

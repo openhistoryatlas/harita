@@ -29,6 +29,16 @@ contents: İçindekiler
 contribute: Katkıda bulun
 story_source: GitHub’da kaynağı
 generated_by: '{harita} ile oluşturuldu'
+map_failed_cdn: Harita kitaplığı yüklenemedi. Bağlantıyı denetleyip sayfayı yenileyin.
+map_failed_webgl: Harita için WebGL gerekiyor, bu tarayıcıda yok. Metin ve kronoloji yine çalışır.
+previous_image: Önceki görsel
+next_image: Sonraki görsel
+search_stories: Hikâye ara
+no_match: "“{q}” ile eşleşen hikâye yok."
+map_data: Harita verileri
+map_view: Harita görünümü
+view_2d: 2B
+view_3d: 3B
 themes:
   cool: Soğuk
   mono: Tek renk

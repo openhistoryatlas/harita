@@ -1,4 +1,4 @@
-// Watch content, src and geo; rebuild on change; serve dist/ with a reload hook for open tabs.
+// Watch content and src; rebuild on change; serve dist/ with a reload hook for open tabs.
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
@@ -9,11 +9,11 @@ const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json' };
 const RELOAD = `<script>(()=>{let v=null;setInterval(async()=>{try{const r=await fetch('/__version');const t=await r.text();if(v===null)v=t;else if(t!==v)location.reload();}catch{}},1000)})()</script>`;
 
-// Serve root/dist on the port and rebuild it when root/content, root/geo or this package's src changes.
+// Serve root/dist on the port and rebuild it when root/content or this package's src changes.
 // Returns the http server. Each build runs in a child process, so edits to the package itself take effect too.
 export function dev({ root = process.cwd(), port = Number(process.env.PORT) || 8080, log = console.log } = {}) {
   const DIST = path.join(root, 'dist');
-  const WATCH = [path.join(root, 'content'), path.join(root, 'geo'), path.join(PKG, 'src')].filter(fs.existsSync);
+  const WATCH = [path.join(root, 'content'), path.join(PKG, 'src')].filter(fs.existsSync);
 
   let version = 0, building = false, queued = false;
   function build() {

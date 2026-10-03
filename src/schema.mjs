@@ -41,7 +41,7 @@ export const Story = z.object({
   extent: Bbox,
   land: z.array(z.string()).min(1),
   countries: z.array(z.string()).min(1),
-  hillshade: z.string(),
+  hillshade: z.string().optional(), // read by harita 0.2.4 and earlier; the build asks for its removal
   families: z.record(Id, z.object({ priority: z.number().int(), color: Hex, color_dark: Hex.optional(), pattern: z.enum(['hatch', 'cross', 'dots']).optional() }).strict()),
   smoothing: z.number().int().min(0).max(10).default(4),
   theme: Id.optional(),
@@ -54,6 +54,9 @@ export const Group = z.object({ title: Translatable.optional() }).strict();
 export const Image = z.object({ file: z.string(), caption: Translatable, credit: Translatable.optional() }).strict();
 export const Images = z.record(Id, Image);
 
+// A tilted 3D view over the terrain: pitch from straight down, bearing clockwise from north, heights times exaggeration.
+export const Camera = z.object({ pitch: z.number().min(10).max(60).default(50), bearing: z.number().min(-180).max(180).default(0), exaggeration: z.number().min(0.5).max(5).default(2) }).strict();
+
 export const Page = z.object({
   date: Translatable,
   title: Translatable,
@@ -63,6 +66,7 @@ export const Page = z.object({
   routes: z.array(Id).default([]),
   markers: z.array(Id).default([]),
   battle: Id.optional(), // one battle per page keeps the map readable
+  camera: z.union([z.literal(false), Camera]).optional(), // false keeps a battle page flat
   // a decorative emblem drawn on the map while the page is open; width is the flag's width in km
   emblem: z.object({ kind: Id }).passthrough().optional(), // kind names plugins/emblems/<kind>.mjs in the content project
   images: Images.default({}),
@@ -105,7 +109,7 @@ export const Zone = z.object({
 });
 export const Route = z.object({
   type: z.literal('Feature'),
-  properties: z.object({ id: Id.optional(), name: Translatable, style: z.enum(['solid', 'dashed']).default('solid') }).strict(),
+  properties: z.object({ id: Id.optional(), name: Translatable, style: z.enum(['solid', 'dashed']).default('solid'), arrows: z.boolean().default(true), offset: z.number().min(-20).max(20).default(0) }).strict(),
   geometry: z.object({ type: z.literal('LineString'), coordinates: z.array(z.tuple([Lon, Lat])).min(2) }),
 });
 

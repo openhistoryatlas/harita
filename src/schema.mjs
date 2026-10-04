@@ -44,6 +44,7 @@ export const Story = z.object({
   hillshade: z.string().optional(), // read by harita 0.2.4 and earlier; the build asks for its removal
   families: z.record(Id, z.object({ priority: z.number().int(), color: Hex, color_dark: Hex.optional(), pattern: z.enum(['hatch', 'cross', 'dots']).optional() }).strict()),
   smoothing: z.number().int().min(0).max(10).default(4),
+  max_zoom: z.number().min(11).max(16).default(11), // battle plans need more; the relief tiles follow it to zoom 15
   theme: Id.optional(),
   // country names on the map; names overrides the Natural Earth name, hide leaves a country unlabelled
   labels: z.object({ countries: z.boolean().default(false), names: z.record(z.string(), Translatable).default({}), hide: z.array(z.string()).default([]) }).strict().optional(),

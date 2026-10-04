@@ -7,7 +7,7 @@ import { PNG } from 'pngjs';
 
 const SOURCE = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
 export const BASE_ZOOM = 7;  // the whole extent down to this zoom; a page that zooms in further gets tiles of its own
-const MAX_ZOOM = 12;         // the map's maxZoom of 11 draws 256 px tiles of zoom 12
+const SOURCE_ZOOM = 15;      // the deepest zoom the source has tiles for
 const VIEW = [1200, 900];    // a large map pane in CSS pixels, for the zoom a page opens at
 const PAD = 0.1;             // the share of a page's bbox added on each side, so a little panning stays sharp
 const VERSION = 1;           // part of the cache folder name; bump it when cut() changes
@@ -36,19 +36,19 @@ const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a
 
 // The zoom fitBounds picks for a page's bbox in a large pane.
 export const openZoom = ([w, s, e, n]) => Math.min(Math.log2(VIEW[0] / ((e - w) / 360 * 512)), Math.log2(VIEW[1] / ((merc(s) - merc(n)) * 512)));
-// The tile zoom a page needs: its opening zoom plus one, for 256 px tiles.
-export const pageZoom = bbox => Math.min(MAX_ZOOM, Math.round(openZoom(bbox) + 1));
+// The tile zoom a page needs: its opening zoom plus one, for 256 px tiles, and at most one above the map's maxZoom.
+export const pageZoom = (bbox, maxZoom = 11) => Math.min(SOURCE_ZOOM, maxZoom + 1, Math.round(openZoom(bbox) + 1));
 
 // The tiles of one story: the extent from zoom 0 to BASE_ZOOM, then each page's padded bbox at the zooms above
 // BASE_ZOOM it opens at. ranges maps a zoom to its [x0, y0, x1, y1] blocks, which the map also uses to ask only
 // for tiles that exist and to draw a parent tile in place of a missing one.
-export function terrainPlan(extent, bboxes) {
+export function terrainPlan(extent, bboxes, maxZoom = 11) {
   const ranges = {};
   const add = (z, r) => { const list = ranges[z] ??= []; if (!list.some(q => q.every((v, i) => v === r[i]))) list.push(r); };
   for (let z = 0; z <= BASE_ZOOM; z++) add(z, range(extent, z));
   let maxzoom = BASE_ZOOM;
   for (const [w, s, e, n] of bboxes) {
-    const top = pageZoom([w, s, e, n]), dx = (e - w) * PAD, dy = (n - s) * PAD;
+    const top = pageZoom([w, s, e, n], maxZoom), dx = (e - w) * PAD, dy = (n - s) * PAD;
     for (let z = BASE_ZOOM + 1; z <= top; z++) add(z, range([w - dx, Math.max(-85, s - dy), e + dx, Math.min(85, n + dy)], z));
     maxzoom = Math.max(maxzoom, top);
   }

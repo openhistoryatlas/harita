@@ -169,6 +169,7 @@ Keys follow the content's ids:
 | markers | `markers.<id>.label`, `markers.<id>.note` |
 | zones, routes | `zones.<id>.name`, `routes.<id>.name` |
 | battles | `battles.<id>.name`, `.date`, `.result`, `.sides.<n>.name`, `.sides.<n>.commanders.<m>`, `.sides.<n>.strength`, `.sides.<n>.casualties` |
+| emblem feature names | `emblems.<page id>.<feature id>` |
 
 Long texts stay in `text/<lang>.md`. To add a language: list it in `story.yaml`, write the markdown
 files, then run
@@ -243,6 +244,7 @@ families:
   greek:   { priority: 3, color: "#2f6a9f", color_dark: "#6fa3d6" }
   held:    { priority: 0, color: "#c62828", pattern: cross }   # hatch, cross or dots over the tint
 smoothing: 4                        # corner rounding passes before the clip
+max_zoom: 14                        # how close a page and a reader can zoom, 11 to 16, 11 by default; relief tiles follow to 15
 ```
 
 ### page.yaml
@@ -353,15 +355,29 @@ emblem: { kind: crescent-star, center: [35.4, 39.1], width_km: 320, color: "#fff
 ```
 
 The kind names a plugin in the content project, `plugins/emblems/<kind>.mjs`, which exports a function
-`(params, { turf }) => FeatureCollection`. Each feature's `color` property is its fill. Harita ships no
-emblems of its own; story specific drawing stays with the story.
+`(params, { turf, families }) => FeatureCollection` of polygons. `families` is the story's families from
+`story.yaml`. Harita ships no emblems of its own; story specific drawing stays with the story.
+
+Each feature's properties set how it looks and what the reader can point at:
+
+- `family`: filled with that family's colour, the light or the dark one to suit the theme.
+- `color`: the fill when there is no `family`, a hex colour the same in every theme.
+- `id`: features that share an id highlight together, so a shape drawn in several pieces acts as one.
+- `hit`: true for a feature that is never drawn and only widens the area the reader can point at, such as the
+  gaps between the pieces of a dotted line.
+- `name`: shown beside the pointer when the reader points at the feature, or at the top of the map after a tap,
+  while the rest of the emblem fades and the feature gains an outline. A named feature needs an `id`. Other
+  languages come from the catalogue under `emblems.<page id>.<id>`.
+
+A battle plan is one use: blocks of troops as named features, so the reader finds out who is who by
+pointing at them.
 
 ### Relief and 3D
 
 The map shades the relief from elevation tiles: Terrarium PNGs from the
 [terrain tiles on AWS](https://registry.opendata.aws/terrain-tiles/). The build cuts the tiles a story
 needs into `dist/terrain/`: the story's `extent` down to zoom 7, then each page's `bbox`, with a tenth more
-on every side, at the zooms the page opens at, up to 12. The sea is flattened to 0 m and stays unshaded.
+on every side, at the zooms the page opens at, up to one past the story's `max_zoom` and at most 15. The sea is flattened to 0 m and stays unshaded.
 The first build of an area downloads its tiles into `.cache/harita/` in the project, and later builds read
 them from there; in CI, keep that folder between runs. A country sized story comes to about 25 MB, of
 which a reader downloads only the tiles in view. The shading takes its colours from the theme.

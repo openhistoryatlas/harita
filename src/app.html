@@ -472,7 +472,7 @@ function mapInit(){
     m = new maplibregl.Map({
       container:'map', attributionControl:false,
       style:{ version:8, sources:{}, ...(B.labels ? { glyphs: GLYPHS } : {}), layers:[{ id:'bg', type:'background', paint:{ 'background-color': css('--sea') } }] },
-      bounds:[[w, s], [e, n]], minZoom:3.5, maxZoom:11, dragRotate:false, touchPitch:false, keyboard:false // arrow keys step pages, never pan
+      bounds:[[w, s], [e, n]], minZoom:3.5, maxZoom:B.maxZoom ?? 11, dragRotate:false, touchPitch:false, keyboard:false // arrow keys step pages, never pan
     });
     m.touchZoomRotate.disableRotation(); // turning and tilting are for the 3D view, see freeCamera
   } catch (err) { // no WebGL: keep the text and navigation working without the map
@@ -517,7 +517,8 @@ function mapInit(){
         layout:{ 'symbol-placement':'line', 'symbol-spacing':70, 'icon-image':'route-arrow', 'icon-rotation-alignment':'map', 'icon-allow-overlap':true, 'icon-ignore-placement':true, 'icon-keep-upright':false, 'icon-offset':[0, offset] } });
     }
     m.addSource('emblem', { type:'geojson', data: { type:'FeatureCollection', features: [] } });
-    m.addLayer({ id:'emblem', type:'fill', source:'emblem', paint:{ 'fill-color': ['get', 'color'], 'fill-opacity': 0.92 } });
+    m.addLayer({ id:'emblem', type:'fill', source:'emblem', paint:{ 'fill-color': emblemFill(), 'fill-opacity': emblemOpacity(null) } });
+    m.addLayer({ id:'emblem-hl', type:'line', source:'emblem', filter: emblemOutline(null), paint:{ 'line-color': css('--ink'), 'line-width': 2 } });
     if (B.labels) { // atlas lettering: small caps in ink-2 with a land coloured halo, larger countries win a collision
       m.addSource('labels', { type:'geojson', data: { type:'FeatureCollection', features: B.labels } });
       m.addLayer({ id:'labels', type:'symbol', source:'labels',
@@ -556,6 +557,20 @@ function mapTheme(){
   for (const id in B.routes) { m.setPaintProperty('rc-' + id, 'line-color', css('--paper')); m.setPaintProperty('r-' + id, 'line-color', css('--route')); }
   if (m.hasImage('route-arrow')) m.updateImage('route-arrow', arrowImage());
   for (const id in B.battles) if (B.battles[id].front) m.setPaintProperty('bf-' + id, 'line-color', css('--accent'));
+  m.setPaintProperty('emblem', 'fill-color', emblemFill()); m.setPaintProperty('emblem-hl', 'line-color', css('--ink'));
+}
+// an emblem feature takes its family's colour in the current theme, else its own colour
+function emblemFill(){
+  const fallback = ['coalesce', ['get', 'color'], css('--accent')], fams = Object.keys(B.families);
+  return fams.length ? ['match', ['get', 'family'], ...fams.flatMap(f => [f, css(colorVar(f))]), fallback] : fallback;
+}
+// a highlighted emblem feature keeps its colour and gains an outline, the rest of the emblem fades; a "hit" feature
+// is never drawn, it only widens the area the reader can point at, such as the gaps in a row of ships
+const emblemOpacity = id => ['case', ['to-boolean', ['get', 'hit']], 0, id == null ? 0.92 : ['case', ['==', ['get', 'id'], id], 0.92, 0.3]];
+const emblemOutline = id => ['all', ['==', ['get', 'id'], id ?? ''], ['!', ['to-boolean', ['get', 'hit']]]];
+function emblemLook(id){
+  ML.map.setPaintProperty('emblem', 'fill-opacity', emblemOpacity(id));
+  ML.map.setFilter('emblem-hl', emblemOutline(id));
 }
 // zone looks: off the page, on it, highlighted, or faded behind a highlighted neighbour
 const ZONE_LOOK = { off: [0, 0, 0, 1], base: [0.38, 0.7, 0.9, 1], on: [0.62, 0.95, 1, 2.5], dim: [0.16, 0.3, 0.4, 1] };
@@ -575,11 +590,12 @@ function setHighlight(kind, id, point, label = true){
     ML.hl = k;
     for (const z of page.zones) zonePaint(z, kind === 'zone' ? (z === id ? 'on' : 'dim') : 'base', 150);
     for (const r of page.routes) routeWidth(r, kind === 'route' && r === id);
+    emblemLook(kind === 'unit' ? id : null);
     legend.querySelectorAll('.lg').forEach(b => b.setAttribute('aria-pressed', b.dataset.hl === k));
   }
   const lab = $('hl-label');
   lab.hidden = !label; if (!label) return;
-  lab.textContent = L(kind === 'zone' ? B.zones[id].name : B.routes[id].name);
+  lab.textContent = L(kind === 'zone' ? B.zones[id].name : kind === 'route' ? B.routes[id].name : page.emblemNames[id]);
   lab.classList.toggle('pinned', !point);
   if (point) { lab.style.left = (point.x + 14) + 'px'; lab.style.top = (point.y + 14) + 'px'; } else { lab.style.left = ''; lab.style.top = ''; }
 }
@@ -589,12 +605,18 @@ function clearHighlight(){
   const page = PAGES[cur];
   for (const z of page.zones) zonePaint(z, 'base', 150);
   for (const r of page.routes) routeWidth(r, false);
+  emblemLook(null);
   legend.querySelectorAll('.lg').forEach(b => b.setAttribute('aria-pressed', 'false'));
 }
-// what lies under a point: a route within a few pixels first, since lines are thin, then the smallest zone
-// containing the point, the most specific one; the query counts each route's line-offset
+// what lies under a point: a named emblem feature first, since it is drawn on top, then a route within a few pixels,
+// since lines are thin, then the smallest zone containing the point, the most specific one; the query counts each
+// route's line-offset
 function hitAt(pt){
   const m = ML.map, page = PAGES[cur], routes = page.routes.map(r => 'r-' + r), zoneLayers = page.zones.map(z => 'z-' + z);
+  if (Object.keys(page.emblemNames).length) {
+    const unit = m.queryRenderedFeatures([[pt.x - 3, pt.y - 3], [pt.x + 3, pt.y + 3]], { layers: ['emblem'] }).find(f => page.emblemNames[f.properties.id]);
+    if (unit) return { kind: 'unit', id: unit.properties.id };
+  }
   // the box grows a pixel at a time, so of two routes drawn side by side the nearer one wins
   for (let r = 0; r <= 6 && routes.length; r++) {
     const route = m.queryRenderedFeatures(r ? [[pt.x - r, pt.y - r], [pt.x + r, pt.y + r]] : [pt.x, pt.y], { layers: routes })[0];
@@ -651,7 +673,7 @@ function mapApply(page, first){
     ML.anim[id] = requestAnimationFrame(tick);
   }
   for (const id in B.battles) if (B.battles[id].front) m.setPaintProperty('bf-' + id, 'line-opacity', page.battle === id ? 0.9 : 0);
-  m.getSource('emblem').setData(page.emblem ?? { type:'FeatureCollection', features: [] });
+  m.getSource('emblem').setData(page.emblem ?? { type:'FeatureCollection', features: [] }); emblemLook(null);
   mapMarkers(page);
   closeBattle();
   if (page.battle) { clearTimeout(ML.battleTimer); ML.battleTimer = setTimeout(() => { if (PAGES[cur] === page) openBattle(page.battle); }, first ? 300 : DUR * 0.8); }

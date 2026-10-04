@@ -91,16 +91,27 @@ function themeCss(themes, defaultId) {
 }
 
 // Emblem plugins live in the content project: plugins/emblems/<kind>.mjs exports a function
-// (params, { turf }) => GeoJSON FeatureCollection, drawn as a fill layer with each feature's "color".
-// Node 22.12+ loads an ES module through require synchronously, which keeps the build synchronous.
-function emblemFor(root, spec, where) {
+// (params, { turf, families }) => GeoJSON FeatureCollection, drawn as a fill layer: a feature takes its "family"
+// colour for the theme, else its "color". Features that share an "id" highlight together, and a "name" shows when
+// the reader points at one. Node 22.12+ loads an ES module through require synchronously, which keeps the build synchronous.
+function emblemFor(root, spec, where, { families, T, pid }) {
   const file = path.join(root, 'plugins', 'emblems', spec.kind + '.mjs');
   if (!exists(file)) fail(where, `unknown emblem kind "${spec.kind}", add plugins/emblems/${spec.kind}.mjs`);
   const plugin = require(file).default;
   if (typeof plugin !== 'function') fail(where, `plugins/emblems/${spec.kind}.mjs must export a default function`);
-  const fc = plugin(spec, { turf });
+  const fc = plugin(spec, { turf, families });
   if (fc?.type !== 'FeatureCollection') fail(where, `emblem plugin "${spec.kind}" must return a FeatureCollection`);
-  return fc;
+  // one translated name per id, kept beside the geometry, since map features hold plain values only
+  const names = {};
+  for (const f of fc.features) {
+    const p = f.properties ??= {};
+    if (p.family && !families[p.family]) fail(where, `emblem feature uses unknown family "${p.family}"`);
+    if (p.name == null) continue;
+    if (p.id == null) fail(where, `emblem feature named "${typeof p.name === 'string' ? p.name : Object.values(p.name)[0]}" needs an id`);
+    names[p.id] ??= T(p.name, `emblems.${pid}.${p.id}`);
+    delete p.name;
+  }
+  return { fc, names };
 }
 
 function buildStory(p, storyDir, site) {
@@ -278,7 +289,8 @@ function buildStory(p, storyDir, site) {
     const sourceTexts = p.sources.map((s, i) => T(s, `pages.${pid}.sources.${i}`, { shared: true }));
     const sources = Object.fromEntries(langs.map(l => [l, sourceTexts.map(s => s[l])]));
     return { id: pid, dir: rel(dir), when, date: T(p.date, `pages.${pid}.date`), title: T(p.title, `pages.${pid}.title`),
-      bbox: p.bbox, camera, zones: p.zones, routes: p.routes, markers: p.markers, battle: p.battle ?? null, emblem: p.emblem ? emblemFor(root, p.emblem, `${at} emblem`) : null, html, sources };
+      bbox: p.bbox, camera, zones: p.zones, routes: p.routes, markers: p.markers, battle: p.battle ?? null, html, sources,
+      ...(p.emblem ? (({ fc, names }) => ({ emblem: fc, emblemNames: names }))(emblemFor(root, p.emblem, `${at} emblem`, { families: story.families, T, pid })) : { emblem: null, emblemNames: {} }) };
   });
   for (let i = 1; i < pages.length; i++) {
     if (pages.find((q, j) => j < i && q.id === pages[i].id)) fail(where, `two pages share the id "${pages[i].id}"`);
@@ -299,12 +311,12 @@ function buildStory(p, storyDir, site) {
   }
 
   // --- elevation: the tiles this story needs; build() cuts them into dist/terrain, shared by every story ---
-  const terrain = { tiles: '../terrain/{z}/{x}/{y}.png', ...terrainPlan(story.extent, pages.map(pg => pg.bbox)) };
+  const terrain = { tiles: '../terrain/{z}/{x}/{y}.png', ...terrainPlan(story.extent, pages.map(pg => pg.bbox), story.max_zoom) };
 
   // --- bundle and page ---
   const bundle = {
     id: story.id, title: T(story.title, 'story.title'), languages: langs, defaultLanguage: defaultLang,
-    extent: story.extent, ui, families: story.families,
+    extent: story.extent, maxZoom: story.max_zoom, ui, families: story.families,
     site: { title: siteT(site.title, 'site.title'), source: site.repository ? `${site.repository.replace(/\/$/, '')}/tree/${site.branch}/content/${story.id}` : null },
     themes: themeList(site.themes, ui, langs), defaultTheme: story.theme ?? site.theme,
     topo, land: { type: 'Feature', properties: {}, geometry: land.geometry }, terrain, labels,

@@ -68,6 +68,30 @@ test('a page dated after the page that follows it fails', async () => {
   await assert.rejects(make(root), /030-kristnitaka starts 1000-01-01, before .*020-althing which starts 1100-01-01/);
 });
 
+test('emblem features are coloured by family and named for the hover label', async () => {
+  const root = copy(), plugin = path.join(root, 'plugins/emblems/ring.mjs');
+  fs.writeFileSync(plugin, fs.readFileSync(plugin, 'utf8').replace("properties: { color }", "properties: { color, family: 'settled', id: 'ring', name: 'The Althing' }"));
+  await make(root);
+  const page = bundleOf(root).pages.find(p => p.emblem);
+  assert.deepEqual(page.emblem.features[0].properties, { color: '#c62828', family: 'settled', id: 'ring' });
+  assert.deepEqual(page.emblemNames, { ring: { en: 'The Althing' } });
+});
+
+test('a story sets how close the map zooms, 11 by default', async () => {
+  const root = copy(), story = path.join(root, 'content/settlement-of-iceland/story.yaml');
+  await make(root);
+  assert.equal(bundleOf(root).maxZoom, 11);
+  fs.appendFileSync(story, 'max_zoom: 14\n');
+  await make(root);
+  assert.equal(bundleOf(root).maxZoom, 14);
+});
+
+test('a named emblem feature without an id fails', async () => {
+  const root = copy(), plugin = path.join(root, 'plugins/emblems/ring.mjs');
+  fs.writeFileSync(plugin, fs.readFileSync(plugin, 'utf8').replace("properties: { color }", "properties: { color, name: 'The Althing' }"));
+  await assert.rejects(make(root), /emblem feature named "The Althing" needs an id/);
+});
+
 test('an emblem kind without a plugin file fails', async () => {
   const root = copy();
   edit(root, `${STORY}/pages/030-kristnitaka/page.yaml`, 'kind: ring', 'kind: halo');
@@ -222,6 +246,13 @@ test('elevation tiles keep land heights to the metre and flatten the sea', () =>
   const out = PNG.sync.read(cut(terrarium((x, y) => y < 128 ? -35.6 : 1234.4 + x / 256)));
   const at = (x, y) => { const k = (y * 256 + x) * 4; return out.data[k] * 256 + out.data[k + 1] + out.data[k + 2] / 256 - 32768; };
   assert.deepEqual([at(10, 10), at(10, 200), at(250, 200)], [0, 1234, 1235]);
+});
+
+test('relief tiles go one zoom past the map, at most to zoom 15 where the source ends', () => {
+  const field = [[-71.235, 42.447, -71.225, 42.452]];
+  assert.equal(terrainPlan([-72, 42, -70, 43], field).maxzoom, 12);
+  assert.equal(terrainPlan([-72, 42, -70, 43], field, 13).maxzoom, 14);
+  assert.equal(terrainPlan([-72, 42, -70, 43], field, 16).maxzoom, 15);
 });
 
 test('a page that zooms in gets elevation tiles above the base zoom, the rest of the extent does not', () => {

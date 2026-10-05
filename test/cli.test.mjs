@@ -41,7 +41,25 @@ test('build in the example exits 0 and writes dist/', async () => {
   await build({ root, log: () => {}, elevation: async () => tile });
   const r = run(root, 'build');
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /wrote dist\/settlement-of-iceland\/index\.html/);
+  assert.match(r.stdout, /wrote dist\/settlement-of-iceland\/ \(story\.js/);
   assert.ok(fs.existsSync(path.join(root, 'dist/index.html')));
   assert.equal(run(root, 'patterns').status, 0);
+});
+
+test('check prints ok and exits 0, or the problems and exits 1', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-cli-'));
+  fs.cpSync(EXAMPLE, root, { recursive: true });
+  let r = run(root, 'check', 'settlement-of-iceland');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.stdout, 'ok\n');
+  fs.rmSync(path.join(root, 'content/settlement-of-iceland/pages/010-landnam/text/en.md'));
+  r = run(root, 'check', 'settlement-of-iceland', 'landnam');
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /010-landnam: text\/en\.md is missing\n1 problem\n$/);
+});
+
+test('coast prints the shore points inside a box, western longitudes included', () => {
+  const r = run(os.tmpdir(), 'coast', 'Spain', '-5.6', '35.9', '-5.2', '36.3');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^\[-5\.\d{3},3[56]\.\d{3}\]/);
 });

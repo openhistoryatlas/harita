@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Histories</title>
+<!--__HEAD__-->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Public+Sans:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -23,7 +23,23 @@ header .controls{margin-inline-start:auto;display:flex;gap:.571rem}
 header a.contribute{color:var(--ink-2);font-size:.929rem;text-decoration:none;border:1px solid var(--rule);border-radius:4px;padding:.357rem .714rem;display:inline-flex;align-items:center}
 header a.contribute:hover{color:var(--ink)}
 header a.contribute:focus-visible{outline:2px solid var(--accent)}
-select#lang,select#theme{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:.357rem .571rem;font:inherit;cursor:pointer}
+header .prefs{position:relative}
+#settings-btn{background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:.357rem .714rem;font:inherit;font-size:.929rem;cursor:pointer;display:inline-flex;align-items:center;gap:.357rem}
+#settings-btn svg{width:1rem;height:1rem}
+#settings-btn:focus-visible{outline:2px solid var(--accent)}
+/* settings: the same panel as on a story page, the layout, the language and the theme, under its button */
+.settings{position:absolute;top:calc(100% + .429rem);inset-inline-end:0;z-index:8;width:min(24rem,calc(100vw - 2.286rem));display:grid;gap:.857rem;
+  background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:.857rem;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.settings .group{display:grid;gap:.357rem}
+.settings .group > span{font-size:.786rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.layouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.429rem}
+.layouts button{display:grid;justify-items:center;align-content:start;gap:.286rem;padding:.429rem;font:inherit;font-size:.786rem;line-height:1.25;text-align:center;
+  background:var(--paper);color:var(--ink);border:1px solid var(--rule);border-radius:6px;cursor:pointer}
+.layouts button svg{width:100%;height:auto;max-width:4.6rem}
+.layouts button[aria-checked="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.layouts button:focus-visible{outline:2px solid var(--accent)}
+@media (max-width:900px){ .settings .layout-group{display:none} } /* a phone has one layout */
+select#lang,select#theme{width:100%;min-height:max(40px,2.857rem);background:var(--paper);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:0 .571rem;font:inherit;cursor:pointer}
 select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--accent)}
 .intro{max-width:62ch;color:var(--ink-2);margin:0}
 .listbar{display:flex;justify-content:space-between;align-items:center;gap:.857rem;flex-wrap:wrap}
@@ -71,7 +87,16 @@ select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--acc
 <div class="wrap">
   <header>
     <h1 id="title"></h1>
-    <div class="controls"><a class="contribute" id="contribute" target="_blank" rel="noopener" hidden></a><select id="lang"></select><select id="theme"></select></div>
+    <div class="controls"><a class="contribute" id="contribute" target="_blank" rel="noopener" hidden></a>
+      <div class="prefs">
+        <button type="button" id="settings-btn" aria-expanded="false" aria-controls="settings"></button>
+        <div class="settings" id="settings" hidden>
+          <div class="group layout-group"><span id="layout-label"></span><div class="layouts" id="layouts" role="radiogroup"></div></div>
+          <label class="group"><span id="lang-label"></span><select id="lang"></select></label>
+          <label class="group"><span id="theme-label"></span><select id="theme"></select></label>
+        </div>
+      </div>
+    </div>
   </header>
   <p class="intro" id="intro"></p>
   <div class="listbar"><input type="search" id="search" autocomplete="off" spellcheck="false"><button type="button" id="toggle-all"></button></div>
@@ -82,8 +107,10 @@ select#lang:focus-visible,select#theme:focus-visible{outline:2px solid var(--acc
 /*__COMMON__*/
 const SITE = null;
 const S = SITE;
-let lang = pref('lang', S.languages, S.defaultLanguage);
-{ const [h] = hashParts(); if (S.languages.includes(h)) lang = h; }
+// the language the URL names, else the reader's
+let lang = ROUTE?.lang ?? preferredLang(S.languages, S.defaultLanguage);
+// a story opens in the main page's language when it has it, else in its own default
+const storyLang = s => s.languages.includes(lang) ? lang : s.defaultLanguage;
 let palette = pref('palette', S.themes.map(t => t.id), S.defaultTheme);
 document.documentElement.dataset.palette = palette;
 const L = field => pick(field, lang, S.defaultLanguage);
@@ -100,6 +127,11 @@ function render(){
   if (S.repository) { $('contribute').href = S.repository; $('contribute').textContent = S.ui[lang].contribute; $('contribute').hidden = false; }
   fillSelect($('lang'), S.languages.map(l => ({ value: l, text: S.ui[l].name ?? l })), lang, S.ui[lang].language);
   fillSelect($('theme'), S.themes.map(t => ({ value: t.id, text: pick(t.name, lang, S.defaultLanguage, t.id) })), palette, S.ui[lang].theme);
+  $('settings-btn').innerHTML = `${S.icons.settings} ${esc(S.ui[lang].settings)}`;
+  $('settings').setAttribute('aria-label', S.ui[lang].settings);
+  $('lang-label').textContent = S.ui[lang].language; $('theme-label').textContent = S.ui[lang].theme;
+  $('layout-label').textContent = S.ui[lang].layout; $('layouts').setAttribute('aria-label', S.ui[lang].layout);
+  $('layouts').innerHTML = layoutButtons(S.ui[lang], pref('layout', LAYOUTS, 'center'));
   $('search').placeholder = S.ui[lang].search_stories; $('search').setAttribute('aria-label', S.ui[lang].search_stories);
   $('toggle-all').textContent = toggleLabel(S.ui[lang], allOpen());
   $('credit').innerHTML = credit(S.ui[lang]);
@@ -116,7 +148,7 @@ function render(){
         <div>
           <p>${esc(L(s.summary))}</p>
           <div class="meta"><span>${s.pages} ${esc(S.ui[lang].pages)}</span><span>${esc(s.languages.map(l => S.ui[l]?.name ?? l).join(', '))}</span></div>
-          <a class="open" href="${storyLink(s.id, lang)}">${esc(S.ui[lang].open)}</a>
+          <a class="open" href="${storyLink(s.id, storyLang(s))}">${esc(S.ui[lang].open)}</a>
         </div>
         <div class="cover">${s.cover ? `<img src="./${esc(s.id)}/${esc(s.cover)}" alt="">` : `<span>${esc(L(s.title))}</span>`}</div>
       </div>
@@ -132,8 +164,13 @@ $('toggle-all').onclick = () => { const all = allOpen(); visible().forEach(s => 
 $('search').oninput = e => { query = e.target.value; render(); };
 $('search').onkeydown = e => { if (e.key === 'Escape' && query) { e.target.value = query = ''; render(); } };
 $('theme').onchange = e => { palette = e.target.value; applyPalette(palette); };
-$('lang').onchange = e => { lang = e.target.value; savePref('lang', lang); setHash('#' + lang, false); render(); };
-render();
+const showSettings = open => { $('settings').hidden = !open; $('settings-btn').setAttribute('aria-expanded', open); };
+$('settings-btn').onclick = () => showSettings($('settings').hidden);
+$('layouts').onclick = e => { const b = e.target.closest('button[data-layout]'); if (b) saveLayout(b.dataset.layout); };
+document.addEventListener('click', e => { if (!$('settings').hidden && !e.target.closest('.prefs')) showSettings(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') showSettings(false); });
+$('lang').onchange = e => { lang = e.target.value; savePref('lang', lang); setRoute([lang], false); render(); };
+render(); setRoute([lang], false);
 </script>
 </body>
 </html>

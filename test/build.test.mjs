@@ -6,8 +6,9 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PNG } from 'pngjs';
-import { build, patterns, schema } from '../src/index.mjs';
+import { build, check, i18n, patterns, schema } from '../src/index.mjs';
 import { cut, terrainPlan, BASE_ZOOM } from '../src/terrain.mjs';
+import { describe } from '../src/pages.mjs';
 
 const EXAMPLE = fileURLToPath(new URL('../example/', import.meta.url));
 const STORY = 'content/settlement-of-iceland';
@@ -24,7 +25,7 @@ const CACHE = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-cache-'));
 let fetched = 0;
 const elevation = async () => { fetched++; return TILE; };
 const make = (root, opts = {}) => build({ root, log: quiet, cache: CACHE, elevation, ...opts });
-const bundleOf = (root, id = 'settlement-of-iceland') => { const html = fs.readFileSync(path.join(root, 'dist', id, 'index.html'), 'utf8'), i = html.indexOf('const BUNDLE = ') + 15; return JSON.parse(html.slice(i, html.indexOf(';\n', i))); };
+const bundleOf = (root, id = 'settlement-of-iceland') => { const js = fs.readFileSync(path.join(root, 'dist', id, 'story.js'), 'utf8'); return JSON.parse(js.slice('const BUNDLE = '.length, js.lastIndexOf(';'))); };
 const append = (root, file, text) => fs.appendFileSync(path.join(root, file), '\n' + text + '\n');
 const edit = (root, file, from, to) => fs.writeFileSync(path.join(root, file), fs.readFileSync(path.join(root, file), 'utf8').replace(from, to));
 
@@ -32,11 +33,11 @@ test('build writes the site index and one page per story', async () => {
   const root = copy(), lines = [];
   const r = await make(root, { log: l => lines.push(l) });
   assert.equal(r.dist, path.join(root, 'dist'));
-  assert.deepEqual(r.stories.map(s => [s.id, s.pages]), [['settlement-of-iceland', 3]]);
-  const page = fs.readFileSync(path.join(root, 'dist/settlement-of-iceland/index.html'), 'utf8');
-  assert.ok(page.includes('const BUNDLE = {"id":"settlement-of-iceland"'));
+  assert.deepEqual(r.stories.map(s => [s.id, s.pages]), [['settlement-of-iceland', 4]]);
+  const page = fs.readFileSync(path.join(root, 'dist/settlement-of-iceland/story.js'), 'utf8');
+  assert.ok(page.startsWith('const BUNDLE = {"id":"settlement-of-iceland"'));
   assert.ok(page.includes('Þingvellir'));
-  assert.match(page, /--land-0:#[0-9a-f]{6};--land-1:#[0-9a-f]{6};/);
+  assert.match(fs.readFileSync(path.join(root, 'dist/settlement-of-iceland/en/landnam/index.html'), 'utf8'), /--land-0:#[0-9a-f]{6};--land-1:#[0-9a-f]{6};/);
   assert.ok(page.includes('"name":"Iceland","tint":0'));
   assert.match(page, /"labels":\[\{"type":"Feature","properties":\{"en":"Ísland","rank":-\d+\},"geometry":\{"type":"Point","coordinates":\[-1\d\.\d+,6[45]\.\d+\]/);
   assert.ok(page.includes('"emblem":{"type":"FeatureCollection","features":[{"type":"Feature"'));
@@ -46,7 +47,8 @@ test('build writes the site index and one page per story', async () => {
   assert.ok(Object.values(bundleOf(root).zones).every(z => Number.isInteger(z.area) && z.area > 0), 'each zone ships its area in km2');
   const index = fs.readFileSync(path.join(root, 'dist/index.html'), 'utf8');
   assert.ok(index.includes('const SITE = {"title":{"en":"Example histories"}'));
-  for (const html of [page, index]) assert.ok(html.includes("const REPO = 'https://github.com/openhistoryatlas/harita';"));
+  const app = fs.readFileSync(path.join(root, 'dist/harita.js'), 'utf8');
+  for (const html of [app, index]) assert.ok(html.includes("const REPO = 'https://github.com/openhistoryatlas/harita';"));
   assert.ok(lines.includes('wrote dist/index.html (1 stories)'));
 });
 
@@ -78,12 +80,12 @@ test('emblem features are coloured by family and named for the hover label', asy
 });
 
 test('a story sets how close the map zooms, 11 by default', async () => {
-  const root = copy(), story = path.join(root, 'content/settlement-of-iceland/story.yaml');
+  const root = copy();
+  await make(root);
+  assert.equal(bundleOf(root).maxZoom, 13);
+  edit(root, `${STORY}/story.yaml`, /^max_zoom:.*\n/m, '');
   await make(root);
   assert.equal(bundleOf(root).maxZoom, 11);
-  fs.appendFileSync(story, 'max_zoom: 14\n');
-  await make(root);
-  assert.equal(bundleOf(root).maxZoom, 14);
 });
 
 test('a named emblem feature without an id fails', async () => {
@@ -215,7 +217,7 @@ test('a battle page opens in 3D when its view is close, and camera: false keeps 
   append(root, `${pages}/020-althing/page.yaml`, 'battle: skirmish');
   edit(root, `${pages}/020-althing/page.yaml`, 'bbox: [-25, 63, -13, 67]', 'bbox: [-40, 55, -5, 70]');
   await make(root);
-  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [{ pitch: 50, bearing: 0, exaggeration: 2 }, null, { pitch: 55, bearing: 40, exaggeration: 2 }]);
+  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [{ pitch: 50, bearing: 0, exaggeration: 2 }, null, { pitch: 55, bearing: 40, exaggeration: 2 }, null]);
   append(root, `${pages}/010-landnam/page.yaml`, 'camera: false');
   await make(root);
   assert.equal(bundleOf(root).pages[0].camera, null);
@@ -271,7 +273,7 @@ test('a page that zooms in gets elevation tiles above the base zoom, the rest of
 test('a page camera reaches the map, and a second build reads the tiles from the cache', async () => {
   const root = copy();
   await make(root);
-  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [null, null, { pitch: 55, bearing: 40, exaggeration: 2 }]);
+  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [null, null, { pitch: 55, bearing: 40, exaggeration: 2 }, null]);
   const before = fetched;
   await make(root);
   assert.equal(fetched, before);
@@ -298,4 +300,218 @@ test('names, citations and credits show in the source language until a catalogue
   // regenerating keeps the one name with its own form, at the end
   i18n({ root, lang: 'tr', log: quiet });
   assert.match(fs.readFileSync(cat, 'utf8'), /# Names, citations and credits[^\n]*\n\n# Þingvellir\nmarkers\.thingvellir\.label: "Thingvellir"/);
+});
+
+test('a build that leaves the zone inputs as they were takes the cleaned zones from the cache', async () => {
+  const root = copy(), cache = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-cache-'));
+  await make(root, { cache });
+  // a stand-in shape under the saved key shows whether the next build reads the cache
+  const file = path.join(cache, 'stories/settlement-of-iceland/zones.json'), saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const tiny = { type: 'Polygon', coordinates: [[[-20, 64], [-19.9, 64], [-20, 64.1], [-20, 64]]] };
+  fs.writeFileSync(file, JSON.stringify({ ...saved, shapes: { ...saved.shapes, island: { type: 'Feature', properties: {}, geometry: tiny } } }));
+  append(root, `${STORY}/pages/020-althing/text/en.md`, 'A text edit leaves the zones alone.');
+  await make(root, { cache });
+  assert.deepEqual(bundleOf(root).zones.island.geometry, tiny);
+  edit(root, `${STORY}/pages/020-althing/zones/island.geojson`, '[-13, 67]', '[-13.5, 67]');
+  await make(root, { cache });
+  assert.notDeepEqual(bundleOf(root).zones.island.geometry, tiny);
+});
+
+test('only builds the named stories and keeps the others from the last build', async () => {
+  const root = copy(), cache = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-cache-'));
+  fs.cpSync(path.join(root, STORY), path.join(root, 'content/second-story'), { recursive: true });
+  edit(root, 'content/second-story/story.yaml', 'id: settlement-of-iceland', 'id: second-story');
+  await make(root, { cache });
+  // a mark in the first story's page shows whether the next build writes it again
+  fs.appendFileSync(path.join(root, 'dist/settlement-of-iceland/index.html'), '<!-- kept -->');
+  edit(root, 'content/second-story/story.yaml', 'The Settlement of Iceland', 'A Second Story');
+  const lines = [];
+  const r = await make(root, { cache, only: ['second-story'], log: l => lines.push(l) });
+  assert.ok(fs.readFileSync(path.join(root, 'dist/settlement-of-iceland/index.html'), 'utf8').endsWith('<!-- kept -->'));
+  assert.deepEqual(lines.filter(l => l.startsWith('story ')), ['story second-story']);
+  assert.deepEqual(r.stories.map(s => s.title.en), ['A Second Story', 'The Settlement of Iceland']);
+  const index = fs.readFileSync(path.join(root, 'dist/index.html'), 'utf8');
+  assert.ok(index.includes('A Second Story') && index.includes('The Settlement of Iceland'));
+  await assert.rejects(make(root, { cache, only: ['missing'] }), /"missing" is not a story folder, the stories are second-story, settlement-of-iceland/);
+  // a card of another shape, such as the last release's, counts as no cache and the story builds again
+  const card = path.join(cache, 'stories/settlement-of-iceland/card.json');
+  fs.writeFileSync(card, JSON.stringify({ ...JSON.parse(fs.readFileSync(card, 'utf8')), format: 1 }));
+  const again = [];
+  await make(root, { cache, only: ['second-story'], log: l => again.push(l) });
+  assert.deepEqual(again.filter(l => l.startsWith('story ')), ['story second-story', 'story settlement-of-iceland']);
+});
+
+// the example in three site languages, with the story in two of them and a site URL
+function trilingual() {
+  const root = copy();
+  edit(root, 'site.yaml', 'languages: [en]', 'languages: [en, tr, de]');
+  append(root, 'site.yaml', 'url: https://example.org/atlas');
+  edit(root, `${STORY}/story.yaml`, 'languages: [en]', 'languages: [en, tr]');
+  for (const d of fs.readdirSync(path.join(root, STORY, 'pages'))) {
+    const text = path.join(root, STORY, 'pages', d, 'text');
+    fs.writeFileSync(path.join(text, 'tr.md'), fs.readFileSync(path.join(text, 'en.md'), 'utf8') + `\nTürkçe metin ${d}.\n`);
+  }
+  return root;
+}
+const read = (root, file) => fs.readFileSync(path.join(root, 'dist', file), 'utf8');
+// the dist/ file a URL of the example site names
+const fileFor = url => url.replace('https://example.org/atlas/', '').replace(/\/$/, '/index.html');
+
+test('every page gets a URL per language: main pages, story overviews and steps', async () => {
+  const root = trilingual();
+  await make(root);
+  const story = 'settlement-of-iceland', steps = ['landnam', 'althing', 'kristnitaka', 'althing-battle'];
+  for (const l of ['en', 'tr', 'de']) assert.ok(fs.existsSync(path.join(root, 'dist', l, 'index.html')), `main page ${l}`);
+  for (const l of ['en', 'tr']) {
+    const overview = read(root, `${story}/${l}/index.html`);
+    for (const s of steps) {
+      assert.ok(overview.includes(`href="${l}/${s}/"`), `${l} overview links to ${s}`);
+      const page = read(root, `${story}/${l}/${s}/index.html`);
+      assert.ok(page.includes(`<html lang="${l}" dir="ltr">`) && page.includes('<base href="../../">'));
+      assert.ok(page.includes(`const ROUTE = {"lang":"${l}","page":"${s}"};`));
+      assert.equal(page.includes(`Türkçe metin`), l === 'tr', `${l} ${s} carries its own text`);
+    }
+  }
+  assert.ok(!fs.existsSync(path.join(root, 'dist', story, 'de')));
+  // the German main page sends readers to the story's default language, the Turkish one to Turkish
+  assert.ok(read(root, 'de/index.html').includes(`href="${story}/en/"`));
+  assert.ok(read(root, 'tr/index.html').includes(`href="${story}/tr/"`));
+  assert.ok(fs.existsSync(path.join(root, 'dist/404.html')) && fs.existsSync(path.join(root, `dist/${story}/tr.md`)));
+  // the same settings on every page: layout, language and theme
+  for (const page of [`${story}/en/landnam/index.html`, 'en/index.html']) assert.ok(read(root, page).includes('<div class="group layout-group">'), page);
+  assert.equal(bundleOf(root).ui.tr.layout_left, 'Metin solda');
+});
+
+test('with a site URL each page names itself, its language versions and a short plain description', async () => {
+  const root = trilingual();
+  await make(root);
+  const page = read(root, 'settlement-of-iceland/tr/althing/index.html');
+  assert.ok(page.includes('<link rel="canonical" href="https://example.org/atlas/settlement-of-iceland/tr/althing/">'));
+  assert.ok(page.includes('<title>The Althing meets at Þingvellir - The Settlement of Iceland</title>'));
+  const alternates = [...page.matchAll(/<link rel="alternate" hreflang="([^"]+)" href="([^"]+)">/g)].map(m => [m[1], m[2]]);
+  assert.deepEqual(alternates.map(a => a[0]), ['en', 'tr', 'x-default']);
+  for (const [, url] of alternates) assert.ok(fs.existsSync(path.join(root, 'dist', fileFor(url))), url);
+  const description = page.match(/<meta name="description" content="([^"]*)">/)[1];
+  assert.ok(description.length <= 160 && !description.includes('<'), description);
+  assert.ok(page.includes('<meta property="og:locale" content="tr_TR">'));
+  const ld = JSON.parse(page.match(/<script type="application\/ld\+json">(.*?)<\/script>/)[1]);
+  assert.deepEqual(ld.map(x => x['@type']), ['BreadcrumbList', 'Article']);
+  assert.equal(ld[1].inLanguage, 'tr');
+  // one URL per site language, then (overview + steps) per story language
+  const locs = xml => [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
+  const index = locs(read(root, 'sitemap.xml'));
+  const urls = index.flatMap(u => locs(read(root, u.replace('https://example.org/atlas/', ''))));
+  assert.equal(urls.length, 3 + (1 + 4) * 2);
+  for (const u of urls) assert.ok(fs.existsSync(path.join(root, 'dist', fileFor(u))), u);
+  const llms = read(root, 'llms.txt');
+  assert.ok(llms.startsWith('# Example histories\n'));
+  for (const [, u] of llms.matchAll(/\]\((https:[^)]+)\)/g)) assert.ok(fs.existsSync(path.join(root, 'dist', fileFor(u))), u);
+  assert.match(read(root, 'robots.txt'), /Sitemap: https:\/\/example\.org\/atlas\/sitemap\.xml/);
+});
+
+test('without a site URL the pages carry no canonical links and the build writes no sitemap', async () => {
+  const root = copy();
+  await make(root);
+  assert.ok(!read(root, 'settlement-of-iceland/en/althing/index.html').includes('rel="canonical"'));
+  assert.ok(!fs.existsSync(path.join(root, 'dist/sitemap.xml')) && !fs.existsSync(path.join(root, 'dist/llms.txt')));
+  assert.ok(read(root, 'settlement-of-iceland/en.md').startsWith('# The Settlement of Iceland\n'));
+});
+
+test('a story id equal to a language code stops the build', async () => {
+  const root = copy();
+  edit(root, `${STORY}/story.yaml`, 'id: settlement-of-iceland', 'id: en');
+  await assert.rejects(make(root), /the story id "en" is also a language code, and both would be the folder dist\/en\//);
+});
+
+test('a page that went leaves no page behind in dist/', async () => {
+  const root = copy();
+  await make(root);
+  fs.renameSync(path.join(root, STORY, 'pages/030-kristnitaka'), path.join(root, STORY, 'pages/030-conversion'));
+  await make(root);
+  assert.ok(fs.existsSync(path.join(root, 'dist/settlement-of-iceland/en/conversion/index.html')));
+  assert.ok(!fs.existsSync(path.join(root, 'dist/settlement-of-iceland/en/kristnitaka')));
+});
+
+test('a description stops at the last sentence that fits, else at a space with an ellipsis', () => {
+  const s = 'The war began in c. 264 BC over Messana. ' + 'Rome and Carthage fought for Sicily for twenty-three years, '.repeat(2) + 'and Rome won.';
+  assert.equal(describe('Short.'), 'Short.');
+  const d = describe(s);
+  assert.ok(d.length <= 160 && d.endsWith('…') && !d.includes('  '), d);
+  const two = 'Rome and Carthage fought for Sicily for twenty-three years in all. ' + 'The fleets met off Mylae and Ecnomus, and Rome won both battles at sea. ' + 'Then came the long siege.';
+  assert.equal(describe(two), two.slice(0, two.indexOf('sea.') + 4));
+});
+
+// --- the battle-plan emblem harita ships ---
+const PLAN = `${STORY}/pages/040-althing-battle/page.yaml`;
+const plan = root => bundleOf(root).pages.find(p => p.id === 'althing-battle');
+
+test('a story draws a battle plan with the emblem harita ships, and its own file replaces it', async () => {
+  const root = copy();
+  await make(root);
+  const p = plan(root), colours = p.emblem.features.filter(f => !f.properties.hit).map(f => f.properties.family ?? f.properties.color);
+  // the allies' side is the story's family, the burners a hex colour, the river and the clash the built-in colours
+  assert.ok(colours.includes('settled') && colours.includes('#6d4c8f') && colours.includes('#5b9bd5') && colours.includes('#f4c542'));
+  assert.equal(p.emblemNames.allies.en, 'Ásgrímr Elliða-Grímsson, Kári Sölmundarson and their allies');
+  fs.writeFileSync(path.join(root, 'plugins/emblems/battle-plan.mjs'), "export default () => ({ type: 'FeatureCollection', features: [] });\n");
+  await make(root);
+  assert.deepEqual(plan(root).emblem.features, []);
+});
+
+test('every unit type draws closed rings', async () => {
+  const { default: battlePlan } = await import('../src/emblems/battle-plan.mjs');
+  for (const type of schema.UNIT_TYPES) {
+    const fc = battlePlan({ units: [{ side: 'neutral', type, at: [10, 45], width: 800, depth: 200, facing: 30, bow: 60, name: 'A unit' }] });
+    assert.ok(fc.features.length, type);
+    for (const f of fc.features) for (const ring of f.geometry.coordinates) {
+      assert.ok(ring.length >= 4, `${type}: a ring of ${ring.length} points`);
+      assert.deepEqual(ring[0], ring.at(-1), `${type}: an open ring`);
+      assert.ok(ring.flat().every(Number.isFinite), `${type}: a coordinate that is not a number`);
+    }
+  }
+});
+
+test('an unknown side or unit type in a battle plan fails, naming the page and the unit', async () => {
+  const root = copy();
+  edit(root, PLAN, 'side: "#6d4c8f"', 'side: vikings');
+  await assert.rejects(make(root), /040-althing-battle\/page\.yaml emblem: battle-plan: unknown side "vikings", use a family of the story \(settled\), neutral or a hex colour/);
+  edit(root, PLAN, 'side: vikings, type: infantry', 'side: neutral, type: berserkers');
+  await assert.rejects(make(root), /040-althing-battle\/page\.yaml emblem:\n {2}units\.0\.type: /);
+});
+
+test('a trench zigzags across its line, a wall keeps to it', async () => {
+  const { default: battlePlan } = await import('../src/emblems/battle-plan.mjs');
+  // how far a work's outline strays north of its line, which runs due east along latitude 45, in metres
+  const stray = style => Math.max(...battlePlan({ works: [{ path: [[10, 45], [10.05, 45]], width: 40, style }] }).features[0].geometry.coordinates[0].map(([, lat]) => (lat - 45) * 110540));
+  assert.ok(stray('wall') <= 21, `wall ${stray('wall')}`);
+  assert.ok(stray('trench') > 60, `trench ${stray('trench')}`);
+});
+
+test('check reports every problem in a story, and page ids limit it to those pages', () => {
+  const root = copy(), story = 'settlement-of-iceland';
+  edit(root, `${STORY}/pages/020-althing/page.yaml`, 'markers: [reykjavik, thingvellir]', 'markers: [reykjavik, hof]');
+  fs.rmSync(path.join(root, STORY, 'pages/020-althing/text/en.md'));
+  edit(root, PLAN, 'side: "#6d4c8f"', 'side: vikings');
+  const all = check({ root, story, log: quiet });
+  assert.equal(all.length, 3, all.join('\n'));
+  assert.match(all[0], /020-althing\/page\.yaml: unknown marker "hof"/);
+  assert.match(all[1], /020-althing: text\/en\.md is missing/);
+  assert.match(all[2], /040-althing-battle\/page\.yaml emblem: battle-plan: unknown side "vikings"/);
+  assert.equal(check({ root, story, pages: ['althing-battle'], log: quiet }).length, 1);
+  assert.deepEqual(check({ root, story, pages: ['landnam'], log: quiet }), []);
+  assert.deepEqual(check({ root, story, pages: ['nowhere'], log: quiet }), ['content/settlement-of-iceland/pages: no page "nowhere"']);
+});
+
+test('story builds one story into a site of its own, and out writes it elsewhere', async () => {
+  const root = copy(), cache = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-cache-'));
+  fs.cpSync(path.join(root, STORY), path.join(root, 'content/second-story'), { recursive: true });
+  edit(root, 'content/second-story/story.yaml', 'id: settlement-of-iceland', 'id: second-story');
+  // a half edited story elsewhere does not stop it
+  edit(root, `${STORY}/pages/010-landnam/page.yaml`, 'zones: [southwest]', 'zones: [nowhere]');
+  await make(root, { cache, story: 'second-story', out: 'one' });
+  assert.ok(fs.existsSync(path.join(root, 'one/second-story/en/landnam/index.html')));
+  assert.ok(!fs.existsSync(path.join(root, 'one/settlement-of-iceland')) && !fs.existsSync(path.join(root, 'dist')));
+  const site = fs.readFileSync(path.join(root, 'one/index.html'), 'utf8');
+  assert.deepEqual(JSON.parse(site.match(/const SITE = (.*);\n/)[1]).stories.map(s => s.id), ['second-story']);
+  i18n({ root, lang: 'tr', story: 'second-story', log: quiet });
+  assert.ok(fs.existsSync(path.join(root, 'content/second-story/i18n/tr.yaml')) && !fs.existsSync(path.join(root, 'dist')));
 });

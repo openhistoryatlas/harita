@@ -18,8 +18,6 @@ strength: Strength
 casualties: Casualties
 source: Source
 collapse_all: Collapse all
-fallback: This story is not available in “{lang}”. Showing {name}.
-missing_page: There is no page “{id}”. Showing the first page.
 read_more: Read more
 hide: Hide
 legend: Legend
@@ -39,6 +37,13 @@ map_data: Map data
 map_view: Map view
 view_2d: 2D
 view_3d: 3D
+start: Start
+not_found: There is no page at this address.
+settings: Settings
+layout: Layout
+layout_center: Map in the middle
+layout_left: Text on the left
+layout_right: Text on the right
 themes:
   cool: Cool
   mono: Mono

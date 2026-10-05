@@ -26,6 +26,7 @@ export const Site = z.object({
   stories: z.array(Id).optional(),
   theme: Id.optional(),
   themes: Themes.optional(),
+  url: z.string().url().optional(), // where the site is published, for canonical links, sitemaps and llms.txt
   repository: z.string().url().optional(), // the content repository: a Contribute link on the main page, a source link per story
   branch: z.string().default('main'),
 }).strict();
@@ -68,11 +69,33 @@ export const Page = z.object({
   markers: z.array(Id).default([]),
   battle: Id.optional(), // one battle per page keeps the map readable
   camera: z.union([z.literal(false), Camera]).optional(), // false keeps a battle page flat
-  // a decorative emblem drawn on the map while the page is open; width is the flag's width in km
-  emblem: z.object({ kind: Id }).passthrough().optional(), // kind names plugins/emblems/<kind>.mjs in the content project
+  // an emblem drawn on the map while the page is open: plugins/emblems/<kind>.mjs, else one harita ships
+  emblem: z.object({ kind: Id }).passthrough().optional(),
   images: Images.default({}),
   sources: z.array(Translatable).default([]),
 }).strict();
+
+// The battle-plan emblem: troops, movements, water and works at one moment of a battle. Sizes are in metres.
+export const UNIT_TYPES = ['infantry', 'cavalry', 'knights', 'pikes', 'light', 'archers', 'irregular', 'elephants', 'chariots', 'siege', 'artillery',
+  'armour', 'aircraft', 'ships', 'submarines', 'camp', 'square', 'fort'];
+const LngLat = z.tuple([Lon, Lat]);
+const Piece = { name: Translatable.optional(), id: z.string().min(1).optional() }; // a named piece shows on pointing
+const PlanSide = z.string().min(1); // a family of the story, neutral or a hex colour, checked when drawing
+const Size = z.number().positive();
+export const BattlePlan = z.object({
+  kind: z.literal('battle-plan'),
+  water: z.array(z.union([
+    z.object({ path: z.array(LngLat).min(2), width: Size.optional(), ...Piece }).strict(),
+    z.object({ area: z.array(LngLat).min(3), ...Piece }).strict(),
+  ])).default([]),
+  works: z.array(z.object({ side: PlanSide.optional(), path: z.array(LngLat).min(2), width: Size.optional(), style: z.enum(['wall', 'trench']).optional(), ...Piece }).strict()).default([]),
+  units: z.array(z.object({
+    side: PlanSide, type: z.enum(UNIT_TYPES).default('infantry'), at: LngLat, width: Size, depth: Size.optional(),
+    facing: z.number().optional(), bow: z.number().optional(), count: z.number().int().positive().optional(), rows: z.number().int().positive().optional(), ...Piece,
+  }).strict()).default([]),
+  arrows: z.array(z.object({ side: PlanSide, path: z.array(LngLat).min(2), width: Size.optional(), style: z.enum(['solid', 'dashed']).optional(), ...Piece }).strict()).default([]),
+  clashes: z.array(z.union([LngLat, z.object({ at: LngLat, size: Size.optional() }).strict()])).default([]),
+}).strict().refine(p => p.water.length + p.works.length + p.units.length + p.arrows.length + p.clashes.length > 0, 'a battle plan needs water, works, units, arrows or clashes');
 
 export const Markers = z.record(Id, z.object({
   lnglat: z.tuple([Lon, Lat]),

@@ -2,6 +2,7 @@
 // Runs the build quietly to collect every translatable string, then writes content/<story>/i18n/<lang>.yaml
 // per story and i18n/<lang>.yaml for the site, keeping translations that are already there.
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
 import { buildPages, uiCatalogue } from './build.mjs';
@@ -9,7 +10,10 @@ import { flatten, catalogueText } from './i18n.mjs';
 
 export function i18n({ root = process.cwd(), lang, story, log = console.log } = {}) {
   if (!lang) throw new Error('usage: harita i18n <lang> [--story id]');
-  const r = buildPages({ root, log: () => {} });
+  // one story builds alone into a folder thrown away after, so a half edited story elsewhere does not stop it
+  const out = story && fs.mkdtempSync(path.join(os.tmpdir(), 'harita-i18n-'));
+  let r;
+  try { r = buildPages({ root, log: () => {}, story, out }); } finally { if (out) fs.rmSync(out, { recursive: true, force: true }); }
   const written = [];
   const write = (file, entries, heading) => {
     const existing = fs.existsSync(file) ? flatten(yaml.load(fs.readFileSync(file, 'utf8')) ?? {}) : {};

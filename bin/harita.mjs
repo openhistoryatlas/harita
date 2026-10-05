@@ -1,21 +1,36 @@
 #!/usr/bin/env node
-// harita build | dev | i18n | patterns, run from a content project folder.
+// harita build | check | dev | i18n | patterns | coast, run from a content project folder.
 import { parseArgs } from 'util';
-import { build, dev, patterns, i18n } from '../src/index.mjs';
+import { build, check, dev, patterns, i18n } from '../src/index.mjs';
+import { coast } from '../src/plans.mjs';
 
-const USAGE = 'usage: harita build [--strict] | harita dev | harita i18n <lang> [--story id] | harita patterns [--fix]';
+const USAGE = 'usage: harita build [--strict] [--only <story> ...] [--story <id>] [--out <dir>] | harita check <story> [page id ...] | harita dev [--story <id>] [--out <dir>] [--port <n>] | harita i18n <lang> [--story id] | harita patterns [--fix] | harita coast <country> <w> <s> <e> <n>';
+// coast reads its numbers as they are, since parseArgs takes a western longitude such as -5.2 for a flag
+if (process.argv[2] === 'coast') {
+  const [country, ...box] = process.argv.slice(3), nums = box.map(Number);
+  if (!country || nums.length !== 4 || !nums.every(Number.isFinite)) { console.error(USAGE); process.exit(2); }
+  try { for (const pts of coast(country, nums)) console.log(pts.map(([x, y]) => `[${x.toFixed(3)},${y.toFixed(3)}]`).join(' ')); }
+  catch (err) { console.error(`error: ${err.message}`); process.exit(1); }
+  process.exit(0);
+}
 let args;
 try {
-  args = parseArgs({ allowPositionals: true, options: { strict: { type: 'boolean' }, fix: { type: 'boolean' }, story: { type: 'string' } } });
+  args = parseArgs({ allowPositionals: true, options: { strict: { type: 'boolean' }, fix: { type: 'boolean' }, story: { type: 'string' }, only: { type: 'string', multiple: true }, out: { type: 'string' }, port: { type: 'string' } } });
 } catch (err) { // an unknown or incomplete flag
   console.error(`${err.message}\n${USAGE}`);
   process.exit(2);
 }
-const { positionals: [cmd, lang], values: opt } = args;
+const { positionals: [cmd, lang, ...rest], values: opt } = args;
 try {
-  if (cmd === 'build') await build({ strict: opt.strict });
+  if (cmd === 'build') await build({ strict: opt.strict, only: opt.only, story: opt.story, out: opt.out });
+  else if (cmd === 'check' && lang) {
+    const problems = check({ story: lang, pages: rest });
+    for (const m of problems) console.log(m);
+    console.log(problems.length ? `${problems.length} problem${problems.length === 1 ? '' : 's'}` : 'ok');
+    process.exitCode = problems.length ? 1 : 0;
+  }
   else if (cmd === 'i18n' && lang) i18n({ lang, story: opt.story });
-  else if (cmd === 'dev') dev();
+  else if (cmd === 'dev') dev({ story: opt.story, out: opt.out, ...(opt.port ? { port: Number(opt.port) } : {}) });
   else if (cmd === 'patterns') {
     const left = patterns({ fix: opt.fix });
     if (left.length && !opt.fix) { console.log('run harita patterns --fix to write the suggested patterns into story.yaml'); process.exit(1); }

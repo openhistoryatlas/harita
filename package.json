@@ -1,7 +1,7 @@
 {
   "name": "@openhistoryatlas/harita",
-  "version": "0.2.6",
-  "description": "Interactive timelines on a map: one standalone HTML page per story, built from a content folder",
+  "version": "0.3.0",
+  "description": "Interactive timelines on a map: a static site with a page per step in every language, built from a content folder",
   "keywords": [
     "map",
     "timeline",
@@ -30,6 +30,7 @@
   "exports": {
     ".": "./src/index.mjs",
     "./schema": "./src/schema.mjs",
+    "./plans": "./src/plans.mjs",
     "./package.json": "./package.json"
   },
   "files": [

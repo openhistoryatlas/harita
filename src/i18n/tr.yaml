@@ -18,8 +18,6 @@ strength: Kuvvet
 casualties: Kayıplar
 source: Kaynak
 collapse_all: Tümünü kapat
-fallback: Bu hikâye “{lang}” dilinde yok. {name} gösteriliyor.
-missing_page: “{id}” adlı bir sayfa yok. İlk sayfa gösteriliyor.
 read_more: Devamını oku
 hide: Gizle
 legend: Lejant
@@ -39,6 +37,13 @@ map_data: Harita verileri
 map_view: Harita görünümü
 view_2d: 2B
 view_3d: 3B
+start: Başla
+not_found: Bu adreste bir sayfa yok.
+settings: Ayarlar
+layout: Yerleşim
+layout_center: Harita ortada
+layout_left: Metin solda
+layout_right: Metin sağda
 themes:
   cool: Soğuk
   mono: Tek renk

@@ -35,6 +35,14 @@ const rings = f => !f ? [] : f.geometry.type === 'Polygon' ? f.geometry.coordina
 const round = c => [Math.round(c[0] * 1e9) / 1e9, Math.round(c[1] * 1e9) / 1e9];
 const key = c => c[0] + ',' + c[1];
 
+// The clip cut to the box around a shape plus a margin, so the land intersection only walks the coast nearby.
+// The margin keeps the cut edges clear of the shape, so the intersection comes out the same.
+function near(clip, [w, s, e, n], margin = 0.1) {
+  const g = turf.bboxClip(clip, [w - margin, s - margin, e + margin, n + margin]).geometry;
+  const polys = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates).filter(p => p[0]?.length >= 4).map(p => p.filter(r => r.length >= 4));
+  return polys.length ? turf.multiPolygon(polys) : null;
+}
+
 // Where one zone's vertex lies on another zone's edge, the edge gets that vertex too, so both boundaries
 // carry the same points and TopoJSON sees one shared arc. Trimming leaves such points on the trimmed side only.
 function node(features) {
@@ -103,7 +111,8 @@ export function coverage({ zones, prio, together, smoothing, fail, where, inters
   // 5. cut to land last, so coasts keep their detail
   const result = {};
   for (const z of zones) {
-    const g = out[z.id] && intersect(out[z.id], z.clip);
+    const land = out[z.id] && near(z.clip, turf.bbox(out[z.id]));
+    const g = land && intersect(out[z.id], land);
     if (!g) fail(where, `zone "${z.id}": nothing left after the land clip`);
     result[z.id] = g;
   }

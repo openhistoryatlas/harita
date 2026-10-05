@@ -108,14 +108,15 @@ nav.pages button:focus-visible,nav.pages a.pg:focus-visible{outline:2px solid va
 .credit{position:absolute;inset-inline-end:.714rem;bottom:.714rem;background:var(--panel);border:1px solid var(--rule);padding:3px .571rem;font-size:.786rem;color:var(--ink-2);pointer-events:auto;
   display:flex;align-items:center;gap:.571rem}
 .credit a{color:inherit}
-.credit #mapdata{background:none;border:0;border-inline-start:1px solid var(--rule);padding:0;padding-inline-start:.571rem;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
-.credit #mapdata svg{display:none;width:1.143rem;height:1.143rem}
-.credit #mapdata:focus-visible{outline:2px solid var(--accent)}
+.credit :is(#mapdata,#othersrc){background:none;border:0;border-inline-start:1px solid var(--rule);padding:0;padding-inline-start:.571rem;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
+.credit :is(#mapdata,#othersrc) svg{display:none;width:1.143rem;height:1.143rem}
+.credit :is(#mapdata,#othersrc):focus-visible{outline:2px solid var(--accent)}
 /* the sources of the borders and the relief, opened from the credit */
 .credits{position:absolute;inset-inline-end:-1px;bottom:calc(100% + .429rem);width:max-content;max-width:min(28rem,calc(100vw - 3rem));background:var(--panel);
   border:1px solid var(--rule);border-radius:4px;padding:.571rem .714rem;box-shadow:0 2px 10px rgba(0,0,0,.2);line-height:1.4}
 .credits h4{margin:0 0 .286rem;font-size:.786rem;letter-spacing:.06em;text-transform:uppercase}
 .credits ul{margin:0;padding-inline-start:1rem;display:grid;gap:.286rem}
+.credit #othersrc[hidden]{display:none}
 .credits .made{display:none;margin:0 0 .429rem}
 /* map tools: the 2D | 3D switch at the top of the map, joined on phones by the Legend button */
 .maptools{position:absolute;top:.714rem;inset-inline-end:.714rem;z-index:3;display:flex;gap:.429rem;align-items:flex-start}
@@ -253,8 +254,8 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
   body:not(.legend-open) .legend{display:none}
   .credit{top:.571rem;bottom:auto;inset-inline-end:.571rem;padding:0;border:0;background:none}
   .credit #made{display:none}
-  .credit #mapdata{display:grid;place-items:center;width:max(44px,3.143rem);height:max(40px,2.857rem);padding:0;background:var(--panel);border:1px solid var(--rule);border-radius:6px;color:var(--ink-2)}
-  .credit #mapdata svg{display:block} .credit #mapdata span{display:none}
+  .credit :is(#mapdata,#othersrc){display:grid;place-items:center;width:max(44px,3.143rem);height:max(40px,2.857rem);padding:0;background:var(--panel);border:1px solid var(--rule);border-radius:6px;color:var(--ink-2)}
+  .credit :is(#mapdata,#othersrc) svg{display:block} .credit :is(#mapdata,#othersrc) span{display:none}
   .credits{top:calc(100% + .429rem);bottom:auto;inset-inline-end:0}
   .credits .made{display:block}
   .lightbox{position:fixed;z-index:30}
@@ -317,7 +318,7 @@ aside.story figcaption small{display:block;font-size:.786rem;color:var(--ink-2);
     <div class="maptools"><button type="button" class="legend-btn" id="legend-btn"></button><div class="view" id="view" role="group" hidden><button type="button" data-view="2d" aria-pressed="true"></button><button type="button" data-view="3d" aria-pressed="false"></button></div></div>
     <div class="legend" id="legend"></div>
     <div class="hl-label" id="hl-label" hidden></div>
-    <div class="credit" id="credit"><span id="made"></span><button type="button" id="mapdata" aria-expanded="false" aria-controls="credits"></button><div class="credits" id="credits" hidden></div></div>
+    <div class="credit" id="credit"><span id="made"></span><button type="button" id="mapdata" aria-expanded="false" aria-controls="credits"></button><div class="credits" id="credits" hidden></div><button type="button" id="othersrc" aria-expanded="false" aria-controls="othercredits" hidden></button><div class="credits" id="othercredits" hidden></div></div>
     <div class="peek" id="peek" role="button" tabindex="0"><p id="peek-text"></p><span class="more" id="peek-more"></span><button type="button" class="close" id="peek-close">×</button></div>
     <div class="lightbox" id="lightbox" hidden>
       <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>

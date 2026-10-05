@@ -34,6 +34,7 @@ next_image: Next image
 search_stories: Search stories
 no_match: "No story matches “{q}”."
 map_data: Map data
+other_sources: Other sources
 map_view: Map view
 view_2d: 2D
 view_3d: 3D

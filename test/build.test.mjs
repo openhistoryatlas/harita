@@ -223,6 +223,16 @@ test('a battle page opens in 3D when its view is close, and camera: false keeps 
   assert.equal(bundleOf(root).pages[0].camera, null);
 });
 
+test('a page lists its other map sources with links, in every language', async () => {
+  const root = copy();
+  append(root, `${STORY}/pages/010-landnam/page.yaml`, 'map_sources:\n  - text: "Lake Þingvallavatn: © OpenStreetMap contributors"\n    url: https://www.openstreetmap.org/copyright');
+  await make(root);
+  const [first, second] = bundleOf(root).pages;
+  assert.deepEqual(first.mapSources.en, [{ text: 'Lake Þingvallavatn: © OpenStreetMap contributors', url: 'https://www.openstreetmap.org/copyright' }]);
+  assert.deepEqual(Object.keys(first.mapSources), Object.keys(first.sources));
+  assert.deepEqual(second.mapSources.en, []);
+});
+
 test('a language written right to left ships dir rtl, English ltr', async () => {
   const root = copy();
   edit(root, `${STORY}/story.yaml`, 'languages: [en]', 'languages: [en, ar]');

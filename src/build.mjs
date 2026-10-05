@@ -276,9 +276,11 @@ function readContent(p, storyDir, onProblem = null) {
     const camera = pg.camera === false ? null : pg.camera ?? (pg.battle && openZoom(pg.bbox) >= 6 ? Camera.parse({}) : null);
     const sourceTexts = pg.sources.map((s, i) => T(s, `pages.${pid}.sources.${i}`, { shared: true }));
     const sources = Object.fromEntries(langs.map(l => [l, sourceTexts.map(s => s[l])]));
+    const mapSourceTexts = pg.map_sources.map((s, i) => T(s.text, `pages.${pid}.map_sources.${i}`, { shared: true }));
+    const mapSources = Object.fromEntries(langs.map(l => [l, pg.map_sources.map((s, i) => ({ text: mapSourceTexts[i][l], url: s.url ?? null }))]));
     const emblem = pg.emblem ? attempt(dir, () => emblemFor(root, pg.emblem, `${at} emblem`, { families: story.families, T, pid })) : null;
     return { id: pid, dir: rel(dir), when, date: T(pg.date, `pages.${pid}.date`), title: T(pg.title, `pages.${pid}.title`),
-      bbox: pg.bbox, camera, zones: pg.zones, routes: pg.routes, markers: pg.markers, battle: pg.battle ?? null, html, sources,
+      bbox: pg.bbox, camera, zones: pg.zones, routes: pg.routes, markers: pg.markers, battle: pg.battle ?? null, html, sources, mapSources,
       emblem: emblem?.fc ?? null, emblemNames: emblem?.names ?? {} };
   };
   const pages = pageDirs.map(dir => attempt(dir, () => readPage(dir))).filter(Boolean);

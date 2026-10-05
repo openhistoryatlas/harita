@@ -73,6 +73,8 @@ export const Page = z.object({
   emblem: z.object({ kind: Id }).passthrough().optional(),
   images: Images.default({}),
   sources: z.array(Translatable).default([]),
+  // map data the page draws beyond the base map, credited in an "Other sources" popup on the map
+  map_sources: z.array(z.object({ text: Translatable, url: z.string().url().optional() }).strict()).default([]),
 }).strict();
 
 // The battle-plan emblem: troops, movements, water and works at one moment of a battle. Sizes are in metres.

@@ -396,6 +396,7 @@ function renderChrome(){
   if (B.site.source) { $('src').href = B.site.source; $('src').innerHTML = `${ICONS['external-link']} ${esc(T().story_source)}`; $('src').hidden = false; }
   $('made').innerHTML = credit(T());
   $('mapdata').innerHTML = `${ICONS.info}<span>${esc(T().map_data)}</span>`; $('mapdata').setAttribute('aria-label', T().map_data);
+  $('othersrc').innerHTML = `${ICONS['external-link']}<span>${esc(T().other_sources)}</span>`; $('othersrc').setAttribute('aria-label', T().other_sources);
   $('credits').innerHTML = `<p class="made">${credit(T())}</p><h4>${esc(T().map_data)}</h4><ul>${B.terrain.credits.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`;
   $('view').setAttribute('aria-label', T().map_view);
   for (const b of $('view').querySelectorAll('button')) b.textContent = T()['view_' + b.dataset.view];
@@ -476,6 +477,13 @@ function renderPeek(){
   $('peek').hidden = !first;
   $('legend-btn').textContent = T().legend;
 }
+// map data this page draws beyond the base map, behind an "Other sources" button beside "Map data"
+function renderMapSources(p){
+  const list = p.mapSources?.[lang] ?? [];
+  $('othersrc').hidden = !list.length; $('othercredits').hidden = true; $('othersrc').setAttribute('aria-expanded', false);
+  $('othercredits').innerHTML = list.length ? `<h4>${esc(T().other_sources)}</h4><ul>${list.map(s => `<li>${s.url
+    ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.text)}</a>` : esc(s.text)}</li>`).join('')}</ul>` : '';
+}
 function renderStory(p){
   renderWhere(p);
   if (p === OVERVIEW) {
@@ -487,6 +495,7 @@ function renderStory(p){
     story.innerHTML = `<div class="date">${esc(L(p.date))}</div><h2>${esc(L(p.title))}</h2>${p.html[lang]}${sources}`;
     document.title = `${L(p.title)} - ${L(B.title)}`;
   }
+  renderMapSources(p);
   story.scrollTop = 0;
   legend.innerHTML = p.zones.map(z => `<button type="button" class="lg" data-hl="zone:${esc(z)}" aria-pressed="false"><i style="${patternCss(B.zones[z].family)}"></i>${esc(L(B.zones[z].name))}</button>`).join('')
     + p.routes.map(r => `<button type="button" class="lg" data-hl="route:${esc(r)}" aria-pressed="false"><i class="r ${B.routes[r].style}${B.routes[r].arrows ? ' arrow' : ''}"></i>${esc(L(B.routes[r].name))}</button>`).join('');
@@ -535,9 +544,12 @@ $('view').onclick = e => {
   view = b.dataset.view; savePref('view', view);
   clearHighlight(); renderView(here()); camera(here(), reduced ? 0 : 900);
 };
-const showCredits = open => { $('credits').hidden = !open; $('mapdata').setAttribute('aria-expanded', open); };
-$('mapdata').onclick = () => showCredits($('credits').hidden);
-document.addEventListener('click', e => { if (!$('credits').hidden && !e.target.closest('.credit')) showCredits(false); });
+// the map data popup and the page's other sources popup share the credit bar, one open at a time
+const CREDIT_POPUPS = { mapdata: 'credits', othersrc: 'othercredits' };
+const showCredits = (open, btn = 'mapdata') => { for (const [b, p] of Object.entries(CREDIT_POPUPS)) { const on = open && b === btn; $(p).hidden = !on; $(b).setAttribute('aria-expanded', on); } };
+$('mapdata').onclick = () => showCredits($('credits').hidden, 'mapdata');
+$('othersrc').onclick = () => showCredits($('othercredits').hidden, 'othersrc');
+document.addEventListener('click', e => { if (!e.target.closest('.credit')) showCredits(false); });
 const showSettings = open => { $('settings').hidden = !open; $('settings-btn').setAttribute('aria-expanded', open); };
 $('settings-btn').onclick = () => showSettings($('settings').hidden);
 document.addEventListener('click', e => { if (!$('settings').hidden && !e.target.closest('.prefs')) showSettings(false); });

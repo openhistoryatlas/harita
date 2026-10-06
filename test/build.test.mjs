@@ -9,6 +9,7 @@ import { PNG } from 'pngjs';
 import { build, check, i18n, patterns, schema } from '../src/index.mjs';
 import { cut, terrainPlan, BASE_ZOOM } from '../src/terrain.mjs';
 import { describe } from '../src/pages.mjs';
+import * as tc from 'topojson-client';
 
 const EXAMPLE = fileURLToPath(new URL('../example/', import.meta.url));
 const STORY = 'content/settlement-of-iceland';
@@ -26,6 +27,8 @@ let fetched = 0;
 const elevation = async () => { fetched++; return TILE; };
 const make = (root, opts = {}) => build({ root, log: quiet, cache: CACHE, elevation, ...opts });
 const bundleOf = (root, id = 'settlement-of-iceland') => { const js = fs.readFileSync(path.join(root, 'dist', id, 'story.js'), 'utf8'); return JSON.parse(js.slice('const BUNDLE = '.length, js.lastIndexOf(';'))); };
+// a zone's outline, decoded from the story's zone topology
+const zoneGeometry = (B, id) => tc.feature(B.zoneShapes, B.zoneShapes.objects.zones.geometries.find(g => g.id === id)).geometry;
 const append = (root, file, text) => fs.appendFileSync(path.join(root, file), '\n' + text + '\n');
 const edit = (root, file, from, to) => fs.writeFileSync(path.join(root, file), fs.readFileSync(path.join(root, file), 'utf8').replace(from, to));
 
@@ -178,7 +181,7 @@ async function junction(root, page, specs) {
   edit(root, `${STORY}/pages/${page}/page.yaml`, 'zones: [island]', `zones: [${specs.map(s => s[0]).join(', ')}]`);
   await make(root);
   const B = bundleOf(root);
-  return specs.map(s => B.zones[s[0]].geometry);
+  return specs.map(s => zoneGeometry(B, s[0]));
 }
 const holes = async geoms => {
   const turf = await import('@turf/turf');
@@ -321,10 +324,26 @@ test('a build that leaves the zone inputs as they were takes the cleaned zones f
   fs.writeFileSync(file, JSON.stringify({ ...saved, shapes: { ...saved.shapes, island: { type: 'Feature', properties: {}, geometry: tiny } } }));
   append(root, `${STORY}/pages/020-althing/text/en.md`, 'A text edit leaves the zones alone.');
   await make(root, { cache });
-  assert.deepEqual(bundleOf(root).zones.island.geometry, tiny);
+  const rounded = g => JSON.parse(JSON.stringify(g, (k, v) => typeof v === 'number' ? +v.toFixed(4) : v));
+  assert.deepEqual(rounded(zoneGeometry(bundleOf(root), 'island')), tiny);
   edit(root, `${STORY}/pages/020-althing/zones/island.geojson`, '[-13, 67]', '[-13.5, 67]');
   await make(root, { cache });
-  assert.notDeepEqual(bundleOf(root).zones.island.geometry, tiny);
+  assert.notDeepEqual(rounded(zoneGeometry(bundleOf(root), 'island')), tiny);
+});
+
+test('a zone keeps the detail of the closest page that shows it', async () => {
+  const root = copy(), page = `${STORY}/pages/030-kristnitaka`;
+  // an oval of 720 points inland, finer than any view needs
+  const ring = [...Array(720)].map((_, k) => [-20.5 + 0.2 * Math.cos(k * Math.PI / 360), 64.3 + 0.1 * Math.sin(k * Math.PI / 360)]);
+  fs.mkdirSync(path.join(root, page, 'zones'));
+  fs.writeFileSync(path.join(root, page, 'zones/oval.geojson'), JSON.stringify({ type: 'Feature', properties: { family: 'settled', name: 'Oval' }, geometry: { type: 'Polygon', coordinates: [[...ring, ring[0]]] } }));
+  edit(root, `${page}/page.yaml`, 'zones: [island]', 'zones: [island, oval]');
+  const points = () => zoneGeometry(bundleOf(root), 'oval').coordinates.flat().length;
+  await make(root);
+  const close = points();
+  edit(root, `${page}/page.yaml`, 'bbox: [-22.5, 63.9, -19.5, 64.6]', 'bbox: [-25, 63, -13, 67]');
+  await make(root);
+  assert.ok(points() < close / 2, `${points()} points from afar, ${close} close up`);
 });
 
 test('only builds the named stories and keeps the others from the last build', async () => {

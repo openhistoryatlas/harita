@@ -49,7 +49,11 @@ const countries = topojson.feature(B.topo, B.topo.objects.countries);
 // Noto Sans glyphs, SIL Open Font License, fetched by range from the Protomaps assets host when a story labels its countries
 const GLYPHS = 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf';
 const landFill = () => { const tints = [...Array(8)].map((_, i) => css(`--land-${i}`).trim()); return ['match', ['get', 'tint'], ...tints.flatMap((c, i) => [i, c]), tints[0]]; };
-const zoneFeature = id => ({ type:'Feature', properties:{ id }, geometry: B.zones[id].geometry });
+// zone outlines come from one topology, decoded the first time a page shows the zone; a zone smaller than a pixel
+// on every page that shows it has no outline in it
+const ZONE_SHAPES = Object.fromEntries(B.zoneShapes.objects.zones.geometries.map(g => [g.id, g]));
+const zoneFeature = id => ({ type:'Feature', properties:{ id }, geometry: ZONE_SHAPES[id] ? topojson.feature(B.zoneShapes, ZONE_SHAPES[id]).geometry : null });
+const HIDDEN = { visibility:'none' };
 const routeFeature = (id, coords) => ({ type:'Feature', properties:{ id }, geometry:{ type:'LineString', coordinates: coords } });
 const sliceRoute = (coords, t) => t <= 0 ? [] : turf.lineSliceAlong(turf.lineString(coords), 0, t * turf.length(turf.lineString(coords))).geometry.coordinates;
 function markerEl(m, battle){
@@ -144,7 +148,7 @@ function hillPaint(){
 }
 
 // ---------- map ----------
-const ML = { map:null, ready:false, markers:{}, anim:{}, shown:{}, camera:0 };
+const ML = { map:null, ready:false, markers:{}, anim:{}, shown:{}, camera:0, zoneData:new Set(), zoneHide:{} };
 function mapInit(){
   if (!window.maplibregl) { $('map').innerHTML = `<div class="fail">${esc(T().map_failed_cdn)}</div>`; return; }
   const [w, s, e, n] = B.extent;
@@ -179,10 +183,10 @@ function mapInit(){
     for (const f in B.families) if (B.families[f].pattern) m.addImage('pat-' + f, patternImage(B.families[f].pattern, css(colorVar(f))));
     for (const id in B.zones) {
       const f = B.zones[id].family, c = css(colorVar(f));
-      m.addSource('z-' + id, { type:'geojson', data: zoneFeature(id) });
-      m.addLayer({ id:'z-' + id, type:'fill', source:'z-' + id, paint:{ 'fill-color': c, 'fill-opacity':0, 'fill-opacity-transition':{ duration:600 } } });
-      if (B.families[f].pattern) m.addLayer({ id:'zp-' + id, type:'fill', source:'z-' + id, paint:{ 'fill-pattern': 'pat-' + f, 'fill-opacity':0, 'fill-opacity-transition':{ duration:600 } } });
-      m.addLayer({ id:'zl-' + id, type:'line', source:'z-' + id, paint:{ 'line-color': c, 'line-width':1, 'line-opacity':0, 'line-opacity-transition':{ duration:600 } } });
+      m.addSource('z-' + id, { type:'geojson', data:{ type:'FeatureCollection', features: [] } });
+      m.addLayer({ id:'z-' + id, type:'fill', source:'z-' + id, layout: HIDDEN, paint:{ 'fill-color': c, 'fill-opacity':0, 'fill-opacity-transition':{ duration:600 } } });
+      if (B.families[f].pattern) m.addLayer({ id:'zp-' + id, type:'fill', source:'z-' + id, layout: HIDDEN, paint:{ 'fill-pattern': 'pat-' + f, 'fill-opacity':0, 'fill-opacity-transition':{ duration:600 } } });
+      m.addLayer({ id:'zl-' + id, type:'line', source:'z-' + id, layout: HIDDEN, paint:{ 'line-color': c, 'line-width':1, 'line-opacity':0, 'line-opacity-transition':{ duration:600 } } });
     }
     m.addLayer({ id:'borders', type:'line', source:'countries', paint:{ 'line-color': css('--border'), 'line-width':0.8, 'line-dasharray':[2, 2] } });
     m.addLayer({ id:'land-outline', type:'line', source:'land', paint:{ 'line-color': css('--ink'), 'line-width':1.2 } });
@@ -262,6 +266,21 @@ function zonePaint(id, look, ms){
   m.setPaintProperty('zl-' + id, 'line-opacity-transition', { duration: ms }); m.setPaintProperty('zl-' + id, 'line-opacity', line);
   m.setPaintProperty('zl-' + id, 'line-width', width);
 }
+// a zone joins the map when a page shows it, its data loaded the first time, and leaves once it has faded out,
+// so MapLibre cuts tiles only for the zones on the page
+function zoneShow(id, on){
+  const m = ML.map, shown = m.getLayoutProperty('z-' + id, 'visibility') === 'visible';
+  const visible = v => { for (const l of ['z-', 'zp-', 'zl-']) if (m.getLayer(l + id)) m.setLayoutProperty(l + id, 'visibility', v ? 'visible' : 'none'); };
+  clearTimeout(ML.zoneHide[id]);
+  if (on) {
+    if (!ML.zoneData.has(id)) { ML.zoneData.add(id); m.getSource('z-' + id).setData(zoneFeature(id)); }
+    if (!shown) visible(true);
+    zonePaint(id, 'base', 600);
+  } else if (shown) {
+    zonePaint(id, 'off', 600);
+    ML.zoneHide[id] = setTimeout(() => visible(false), 600);
+  }
+}
 function routeWidth(id, on){ ML.map.setPaintProperty('r-' + id, 'line-width', on ? 4.5 : 2.5); ML.map.setPaintProperty('rc-' + id, 'line-width', on ? 8 : 5); }
 // point: where to show the name beside the pointer; null pins it at the top of the map; label false shows none
 function setHighlight(kind, id, point, label = true){
@@ -337,10 +356,7 @@ function mapApply(page, first){
   camera(page, first ? 0 : DUR);
   renderView(page);
   ML.hl = null; $('hl-label').hidden = true;
-  for (const id in B.zones) {
-    const on = page.zones.includes(id);
-    zonePaint(id, on ? 'base' : 'off', 600);
-  }
+  for (const id in B.zones) zoneShow(id, page.zones.includes(id));
   for (const id in B.routes) routeWidth(id, false);
   const fresh = page.routes.filter(id => !ML.shown[id]);
   for (const id in B.routes) {

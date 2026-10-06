@@ -13,7 +13,7 @@ import polylabel from 'polylabel';
 import { check, Site, Story, Group, Page, Camera, Markers, Battles, Images, Zone, Route, Themes, BattlePlan } from './schema.mjs';
 import { alikePairs, describe } from './palette.mjs';
 import { loadCatalogues, translator, flatten, unflatten } from './i18n.mjs';
-import { coverage } from './coverage.mjs';
+import { coverage, packZones } from './coverage.mjs';
 import { terrainPlan, tileKeys, terrainTiles, openZoom } from './terrain.mjs';
 import { esc, siteContext, storyFiles, siteFiles } from './pages.mjs';
 
@@ -369,6 +369,9 @@ function buildStory(p, storyDir, site) {
     writeCache(zoneFile, { key: zoneKey, shapes, lines: zoneLines });
   }
   const zones = Object.fromEntries(ordered.map(z => [z.id, { ...z, feature: shapes[z.id] }]));
+  // the closest view each zone opens at sets the detail its outline keeps
+  const zoneZoom = {};
+  for (const pg of pages) for (const z of pg.zones) zoneZoom[z] = Math.max(zoneZoom[z] ?? 0, openZoom(pg.bbox));
 
   // --- families shown on the same page must differ in colour or in pattern ---
   for (const f of alikePairs(story.families, pages.map(p => ({ dir: p.dir, families: [...new Set(p.zones.map(z => zones[z].family))] })))) log(`  warning: ${describe(f)}`);
@@ -400,7 +403,8 @@ function buildStory(p, storyDir, site) {
       source: site.repository ? `${site.repository.replace(/\/$/, '')}/tree/${site.branch}/content/${story.id}` : null },
     themes: themeList(site.themes, ui, langs), defaultTheme: story.theme ?? site.theme,
     topo, land: { type: 'Feature', properties: {}, geometry: land.geometry }, terrain, labels,
-    zones: Object.fromEntries(Object.values(zones).map(z => [z.id, { family: z.family, name: z.name, area: Math.round(km2(z.feature)), geometry: turf.truncate(z.feature, { precision: 4 }).geometry }])),
+    zones: Object.fromEntries(Object.values(zones).map(z => [z.id, { family: z.family, name: z.name, area: Math.round(km2(z.feature)) }])),
+    zoneShapes: packZones(shapes, zoneZoom),
     routes, markers, battles, images, icons, pages: pages.map(({ dir, ...p }) => p), tree: navTree(tree),
   };
   const familyCss = Object.entries(story.families).map(([f, c]) => `--z-${f}:${c.color};`).join('');

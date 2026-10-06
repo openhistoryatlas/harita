@@ -335,7 +335,9 @@ all zones as one coverage: every boundary splits into arcs between nodes, the po
 zones meet or two part ways, and each arc is rounded once with its nodes held in place. Neighbours keep a
 common edge however many zones meet at a point, so rounding opens no gaps. Last, each zone is clipped to the
 land polygon, or to the countries in its own `clip` list when given, which keeps coasts exact. Zones in
-the same family never cut each other, so one family holds several dated shapes.
+the same family never cut each other, so one family holds several dated shapes. The story ships all zones
+as one TopoJSON topology, which stores an edge that several zones share once. Each edge keeps the detail
+that the closest page showing it needs, plus one zoom level.
 
 Drawing rules that follow from this:
 

@@ -6,6 +6,7 @@
 import * as turf from '@turf/turf';
 import * as ts from 'topojson-server';
 import * as tc from 'topojson-client';
+import * as tsi from 'topojson-simplify';
 
 const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 
@@ -117,4 +118,24 @@ export function coverage({ zones, prio, together, smoothing, fail, where, inters
     result[z.id] = g;
   }
   return result;
+}
+
+// The cleaned zones as one TopoJSON topology for the map, so an edge that several zones share is stored once.
+// Each arc keeps the detail of the closest view any of its zones opens at, zooms[id], one zoom level deeper:
+// Visvalingam's method drops a point whose triangle with its neighbours covers under half a square pixel there.
+// The triangle's area is scaled by the latitude as Web Mercator scales it. Coordinates go to 0.0001 degrees.
+export function packZones(shapes, zooms) {
+  const features = Object.entries(shapes).map(([id, f]) => ({ type: 'Feature', id, properties: {}, geometry: f.geometry }));
+  if (!features.length) return { type: 'Topology', objects: { zones: { type: 'GeometryCollection', geometries: [] } }, arcs: [] };
+  const screenArea = t => tsi.planarTriangleArea(t) / Math.cos(t[1][1] * Math.PI / 180);
+  const topo = tsi.presimplify(ts.topology({ zones: { type: 'FeatureCollection', features } }), screenArea);
+  const zoom = topo.arcs.map(() => 0);
+  const mark = (arcs, z) => { for (const a of arcs) if (Array.isArray(a)) mark(a, z); else { const i = a < 0 ? ~a : a; zoom[i] = Math.max(zoom[i], z); } };
+  for (const g of topo.objects.zones.geometries) mark(g.arcs, zooms[g.id] ?? 0);
+  const minWeight = z => (360 / (512 * 2 ** (z + 1))) ** 2 / 2;
+  topo.arcs = topo.arcs.map((arc, i) => arc.filter(p => p[2] >= minWeight(zoom[i])).map(p => [p[0], p[1]]));
+  // a ring left without area goes
+  const kept = tsi.filter(topo, tsi.filterWeight(topo));
+  const [x0, y0] = tc.bbox(kept);
+  return tc.quantize(kept, { scale: [1e-4, 1e-4], translate: [x0, y0] });
 }

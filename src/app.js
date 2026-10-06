@@ -164,6 +164,9 @@ function mapInit(){
     $('map').innerHTML = `<div class="fail">${esc(T().map_failed_webgl)}</div>`; return;
   }
   ML.map = m;
+  // a story wider than the map at zoom 3.5, such as one from Greenland to the Caspian, zooms out until its extent fits
+  const fitExtent = () => m.setMinZoom(Math.min(3.5, (m.cameraForBounds([[w, s], [e, n]], { padding: fitPadding() })?.zoom ?? 3.5) - 0.2));
+  fitExtent(); m.on('resize', fitExtent);
   m.on('movestart', e => { if (e.originalEvent) ML.beforeNudge = null; });
   m.on('error', e => { if (!e.sourceId?.startsWith('dem')) console.error(e.error ?? e); }); // a refused elevation tile is expected
   // pointing at a zone or a route highlights it; on touch screens a tap does, and a tap on empty map clears it
@@ -247,11 +250,12 @@ function mapTheme(){
 // an emblem feature takes its family's colour in the current theme, else its own colour
 function emblemFill(){
   const fallback = ['coalesce', ['get', 'color'], css('--accent')], fams = Object.keys(B.families);
-  return fams.length ? ['match', ['get', 'family'], ...fams.flatMap(f => [f, css(colorVar(f))]), fallback] : fallback;
+  const own = fams.length ? ['match', ['get', 'family'], ...fams.flatMap(f => [f, css(colorVar(f))]), fallback] : fallback;
+  return ['case', ['has', 'tint'], landFill(), own];   // land in a battle plan takes its country's tint
 }
 // a highlighted emblem feature keeps its colour and gains an outline, the rest of the emblem fades; a "hit" feature
 // is never drawn, it only widens the area the reader can point at, such as the gaps in a row of ships
-const emblemOpacity = id => ['case', ['to-boolean', ['get', 'hit']], 0, id == null ? 0.92 : ['case', ['==', ['get', 'id'], id], 0.92, 0.3]];
+const emblemOpacity = id => ['case', ['to-boolean', ['get', 'hit']], 0, ['has', 'tint'], 1, id == null ? 0.92 : ['case', ['==', ['get', 'id'], id], 0.92, 0.3]];
 const emblemOutline = id => ['all', ['==', ['get', 'id'], id ?? ''], ['!', ['to-boolean', ['get', 'hit']]]];
 function emblemLook(id){
   ML.map.setPaintProperty('emblem', 'fill-opacity', emblemOpacity(id));

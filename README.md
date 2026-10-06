@@ -318,7 +318,9 @@ when a page starts before the page preceding it in folder order, naming both fol
 
 ### text/<lang>.md
 
-Markdown. A line of the form `@image <id>` places that image as a figure at that point in the text.
+Markdown. A line of the form `@image <id>` places that image as a figure at that point in the text. A line
+that opens with a number and a full stop stays text, as Turkish ordinals do ("21. yüzyılda"), so a text has no
+numbered lists.
 Clicking a figure, or a marker's photo on the map, opens it large over the map.
 
 ### Zones
@@ -422,6 +424,7 @@ sizes in metres.
 ```yaml
 emblem:
   kind: battle-plan
+  land:    [{ area: [[lon, lat], ...] }]
   water:   [{ path: [[lon, lat], ...], width: 80 }, { area: [[lon, lat], ...] }]
   works:   [{ side: rome, path: [[lon, lat], ...], width: 40, style: trench }]
   units:   [{ side: carthage, type: infantry, at: [lon, lat], width: 1800, depth: 400, facing: 315, bow: 300 }]
@@ -431,6 +434,8 @@ emblem:
 
 - `side` is a family of the story, `neutral` for grey, or a hex colour. Water takes the story's `water`
   family when it has one, else a blue.
+- `land` fills ground that the base map's coast misses at the scale of a battle, such as an island in an
+  estuary, in the land colour of the nearest country in every theme. Water drawn after it cuts channels through it.
 - `facing` is the compass bearing a unit faces. `width` runs along its front and `depth` from front to back.
   `bow` bends the front: a positive value pushes the centre towards the enemy, a negative one draws it back.
 - `count` sets the number of pieces in a unit drawn as a row, and `rows` the lines of ships.

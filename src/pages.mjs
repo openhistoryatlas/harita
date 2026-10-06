@@ -6,6 +6,8 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 // JSON inside a <script> element, with < escaped so a "</script>" in the content stays text
 const scriptJson = v => JSON.stringify(v).replace(/</g, '\\u003c');
 const pick = (field, lang, fallback) => field?.[lang] ?? field?.[fallback] ?? '';
+// A line that opens with a number and a full stop is text, as Turkish ordinals are ("21. yüzyılda"), not a list item.
+export const ordinals = md => md.replace(/^(\d+)\. /gm, '$1\\. ');
 
 // a marker the template must hold. The function form keeps a "$&" in the value literal.
 function fill(html, marker, value) {
@@ -145,7 +147,7 @@ function markdown(B, lang, texts, imageUrl) {
     for (const n of nodes) {
       if (n.type === 'group') { out.push(`${heading(depth)} ${L(n.title)}`, ''); walk(n.children, depth + 1); continue; }
       const p = B.pages[n.index];
-      const text = texts[p.id][lang].replace(/^@image\s+(\S+)\s*$/gm, (_, imgId) => `![${L(B.images[imgId].caption).replace(/[[\]]/g, '\\$&')}](${imageUrl(imgId)})`);
+      const text = ordinals(texts[p.id][lang]).replace(/^@image\s+(\S+)\s*$/gm, (_, imgId) => `![${L(B.images[imgId].caption).replace(/[[\]]/g, '\\$&')}](${imageUrl(imgId)})`);
       out.push(`${heading(depth)} ${L(p.title)}`, '', `*${L(p.date)}*`, '', text.trim(), '');
       if (p.sources[lang].length) out.push(`${T.sources}:`, '', ...p.sources[lang].map(s => `- ${s}`), '');
     }

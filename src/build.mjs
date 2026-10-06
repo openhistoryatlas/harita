@@ -15,7 +15,7 @@ import { alikePairs, describe } from './palette.mjs';
 import { loadCatalogues, translator, flatten, unflatten } from './i18n.mjs';
 import { coverage, packZones } from './coverage.mjs';
 import { terrainPlan, tileKeys, terrainTiles, openZoom } from './terrain.mjs';
-import { esc, siteContext, storyFiles, siteFiles } from './pages.mjs';
+import { esc, ordinals, siteContext, storyFiles, siteFiles } from './pages.mjs';
 
 // PKG is this package. The content project comes in as the root of each build.
 const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -42,7 +42,30 @@ const UI_DIR = path.join(PKG, 'src', 'i18n');
 const UI = Object.fromEntries(fs.readdirSync(UI_DIR).filter(f => f.endsWith('.yaml')).map(f => [f.replace(/\.yaml$/, ''), yaml.load(fs.readFileSync(path.join(UI_DIR, f), 'utf8'))]));
 // Natural Earth countries, parsed on the first build so that importing the package stays cheap
 let worldFeatures = null;
-const world = () => { if (!worldFeatures) { const w = JSON.parse(fs.readFileSync(require.resolve('world-atlas/countries-10m.json'))); worldFeatures = tc.feature(w, w.objects.countries).features; } return worldFeatures; };
+const world = () => { if (!worldFeatures) { const w = JSON.parse(fs.readFileSync(require.resolve('world-atlas/countries-10m.json'))); worldFeatures = tc.feature(w, w.objects.countries).features.map(f => ({ ...f, geometry: f.geometry && unwrap(f.geometry) })); } return worldFeatures; };
+// Russia has a ring that jumps from 180 to -180 and back, which a planar clip reads as edges across the whole map.
+// The ring runs on past 180 instead, with a copy a turn to the west for the part beyond the antimeridian.
+const unwrapRing = ring => {
+  let shift = 0;
+  const out = [];
+  for (const [x, y] of ring) {
+    const step = x + shift - (out.at(-1)?.[0] ?? x + shift);
+    if (Math.abs(step) > 180) shift -= Math.sign(step) * 360;
+    out.push([x + shift, y]);
+  }
+  return shift === 0 ? out : ring;   // a ring round the pole does not close when unwrapped, so it stays as it is
+};
+function unwrap(geometry) {
+  const polys = [];
+  for (const p of geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates) {
+    const rings = p.map(unwrapRing), xs = rings[0].map(c => c[0]);
+    polys.push(rings);
+    const east = xs.reduce((a, b) => Math.max(a, b)), west = xs.reduce((a, b) => Math.min(a, b));
+    if (east > 180) polys.push(rings.map(r => r.map(([x, y]) => [x - 360, y])));
+    if (west < -180) polys.push(rings.map(r => r.map(([x, y]) => [x + 360, y])));
+  }
+  return polys.length === 1 ? { type: 'Polygon', coordinates: polys[0] } : { type: 'MultiPolygon', coordinates: polys };
+}
 // Marker icons come from Lucide; the names the first stories used before map onto it
 const ICON_DIR = path.dirname(require.resolve('lucide-static/icons/flag.svg'));
 const LEGACY_ICONS = { congress: 'users', scroll: 'scroll-text', building: 'landmark' };
@@ -270,7 +293,7 @@ function readContent(p, storyDir, onProblem = null) {
         firstImages[pid][lang] ??= imgId;
         return `\n${figure(imgId, lang)}\n`;
       });
-      html[lang] = marked.parse(md);
+      html[lang] = marked.parse(ordinals(md));
     });
     // a battle page opens in 3D when its view is close enough for the relief to show
     const camera = pg.camera === false ? null : pg.camera ?? (pg.battle && openZoom(pg.bbox) >= 6 ? Camera.parse({}) : null);
@@ -325,6 +348,13 @@ function buildStory(p, storyDir, site) {
     const taken = new Set(near[i].map(j => geoms[j].properties.tint));
     let t = 0; while (taken.has(t)) t++;
     geoms[i].properties.tint = t % LAND_SLOTS;
+  }
+  // land in a battle plan takes the tint of the country it lies on, or of the nearest one where the coast misses it
+  const tintOf = Object.fromEntries(geoms.map(g => [g.properties.name, g.properties.tint]));
+  for (const pg of pages) for (const f of pg.emblem?.features ?? []) if (f.properties.land) {
+    const pt = f.geometry.coordinates[0][0];
+    const { c } = countries.reduce((best, c) => { const d = turf.pointToPolygonDistance(pt, c); return d < best.d ? { c, d } : best; }, { d: Infinity });
+    f.properties.tint = tintOf[c.properties.name];
   }
 
   // --- country labels: one point per country at the pole of inaccessibility of its largest visible piece ---

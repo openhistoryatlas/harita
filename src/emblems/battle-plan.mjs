@@ -3,6 +3,7 @@
 //
 // emblem:
 //   kind: battle-plan
+//   land:   [{ area: [[lon, lat], ...] }]     ground the base map's coast misses, in the land colour of its country
 //   water:  [{ path: [[lon, lat], ...], width: 80 }, { area: [[lon, lat], ...] }]     rivers, lakes, coast
 //   works:  [{ side: rome, path: [[lon, lat], ...], width: 40, style: trench }]        walls, ramparts, siege lines
 //   units:  [{ side: carthage, type: infantry, at: [lon, lat], width: 1800, depth: 400, facing: 315, bow: 300 }]
@@ -27,8 +28,8 @@
 const NEUTRAL = '#8c8c8c', WATER = '#5b9bd5', CLASH = '#f4c542';
 
 export default function battlePlan(spec, { families = {} } = {}) {
-  const { water = [], works = [], units = [], arrows = [], clashes = [] } = spec;
-  const all = [...water.flatMap(w => w.path ?? w.area), ...works.flatMap(w => w.path), ...units.map(u => u.at), ...arrows.flatMap(a => a.path), ...clashes.map(clashAt)];
+  const { land = [], water = [], works = [], units = [], arrows = [], clashes = [] } = spec;
+  const all = [...land.flatMap(l => l.area), ...water.flatMap(w => w.path ?? w.area), ...works.flatMap(w => w.path), ...units.map(u => u.at), ...arrows.flatMap(a => a.path), ...clashes.map(clashAt)];
   // one flat projection around the middle of the plan: metres east and north
   const lon0 = all.reduce((s, p) => s + p[0], 0) / all.length, lat0 = all.reduce((s, p) => s + p[1], 0) / all.length;
   const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
@@ -41,6 +42,8 @@ export default function battlePlan(spec, { families = {} } = {}) {
   const feats = [];
   const add = (rings, props) => { const closed = rings.filter(r => r.length >= 3).map(r => { const ll = r.map(toLL); ll.push(ll[0]); return ll; }); if (closed.length) feats.push({ type: 'Feature', properties: props, geometry: { type: 'Polygon', coordinates: closed } }); };
 
+  // the build gives land the tint of its country
+  for (const l of land) add([l.area.map(toM)], { land: true });
   // a story with a `water` family colours water per theme, for stories whose sides are blue
   const wet = families.water ? { family: 'water', color: families.water.color } : { color: WATER };
   for (const w of water) {

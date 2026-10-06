@@ -6,6 +6,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PNG } from 'pngjs';
+import * as turf from '@turf/turf';
 import { build, check, i18n, patterns, schema } from '../src/index.mjs';
 import { cut, terrainPlan, BASE_ZOOM } from '../src/terrain.mjs';
 import { describe } from '../src/pages.mjs';
@@ -80,6 +81,25 @@ test('emblem features are coloured by family and named for the hover label', asy
   const page = bundleOf(root).pages.find(p => p.emblem);
   assert.deepEqual(page.emblem.features[0].properties, { color: '#c62828', family: 'settled', id: 'ring' });
   assert.deepEqual(page.emblemNames, { ring: { en: 'The Althing' } });
+});
+
+test('land in a battle plan takes the tint of the nearest country and draws first', async () => {
+  const root = copy();
+  edit(root, `${STORY}/pages/040-althing-battle/page.yaml`, '  kind: battle-plan\n', '  kind: battle-plan\n  land:\n    - { area: [[-21.14, 64.25], [-21.13, 64.25], [-21.13, 64.255]] }\n');
+  await make(root);
+  const b = bundleOf(root), iceland = b.topo.objects.countries.geometries.find(g => g.properties.name === 'Iceland').properties.tint;
+  const plan = b.pages.find(p => p.emblem?.features.some(f => f.properties.land));
+  assert.deepEqual(plan.emblem.features[0].properties, { land: true, tint: iceland });
+});
+
+test('a paragraph opening with an ordinal stays a paragraph', async () => {
+  const root = copy();
+  fs.writeFileSync(path.join(root, `${STORY}/pages/010-landnam/text/en.md`), '21. yüzyılda the farm is a museum.\n');
+  await make(root);
+  const html = bundleOf(root).pages.find(p => p.id === 'landnam').html.en;
+  assert.match(html, /<p>21\. yüzyılda the farm is a museum\.<\/p>/);
+  assert.ok(!html.includes('<ol'));
+  assert.match(fs.readFileSync(path.join(root, 'dist/settlement-of-iceland/en.md'), 'utf8'), /^21\\\. yüzyılda/m);
 });
 
 test('a story sets how close the map zooms, 11 by default', async () => {
@@ -255,6 +275,18 @@ test('neighbouring countries get different land tints', async () => {
   const tint = Object.fromEntries(bundleOf(root, 'benelux').topo.objects.countries.geometries.map(g => [g.properties.name, g.properties.tint]));
   const borders = [['Belgium', 'Netherlands'], ['Belgium', 'Luxembourg'], ['Belgium', 'Germany'], ['Belgium', 'France'], ['Netherlands', 'Germany'], ['Luxembourg', 'Germany'], ['Luxembourg', 'France'], ['Germany', 'France']];
   for (const [a, b] of borders) assert.notEqual(tint[a], tint[b], `${a} and ${b} share tint ${tint[a]}`);
+});
+
+test('Russia across the antimeridian clips to its own coast in a northern extent', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-north-')), story = path.join(root, 'content/north');
+  fs.mkdirSync(path.join(story, 'pages/010-start/text'), { recursive: true });
+  fs.writeFileSync(path.join(story, 'story.yaml'), 'id: north\ntitle: North\nlanguages: [en]\nextent: [-30, 55, 60, 71.5]\nland: [Norway, Russia]\ncountries: [Norway, Russia]\nfamilies: {}\n');
+  fs.writeFileSync(path.join(story, 'pages/010-start/page.yaml'), 'date: "900"\ntitle: Start\nbbox: [-30, 55, 60, 71.5]\n');
+  fs.writeFileSync(path.join(story, 'pages/010-start/text/en.md'), 'The north.\n');
+  await make(root);
+  const land = bundleOf(root, 'north').land;
+  for (const sea of [[0, 67], [-30, 66], [38.5, 65.5]]) assert.ok(!turf.booleanPointInPolygon(sea, land), `sea at ${sea} is land`);
+  for (const ground of [[37, 67.5], [50, 66.5], [10, 61]]) assert.ok(turf.booleanPointInPolygon(ground, land), `land at ${ground} is missing`);
 });
 
 test('elevation tiles keep land heights to the metre and flatten the sea', () => {

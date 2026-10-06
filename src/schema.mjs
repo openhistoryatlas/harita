@@ -86,6 +86,7 @@ const PlanSide = z.string().min(1); // a family of the story, neutral or a hex c
 const Size = z.number().positive();
 export const BattlePlan = z.object({
   kind: z.literal('battle-plan'),
+  land: z.array(z.object({ area: z.array(LngLat).min(3) }).strict()).default([]),
   water: z.array(z.union([
     z.object({ path: z.array(LngLat).min(2), width: Size.optional(), ...Piece }).strict(),
     z.object({ area: z.array(LngLat).min(3), ...Piece }).strict(),

@@ -63,3 +63,15 @@ test('coast prints the shore points inside a box, western longitudes included', 
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^\[-5\.\d{3},3[56]\.\d{3}\]/);
 });
+
+test('image writes a story image folder and prints its name, or the usage when the caption is missing', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-cli-'));
+  fs.cpSync(EXAMPLE, root, { recursive: true });
+  fs.writeFileSync(path.join(root, 'farm.png'), '');
+  const r = run(root, 'image', 'farm.png', 'farm', '--caption', 'The farm', '--story', 'settlement-of-iceland');
+  assert.equal(r.status, 0, r.stderr);
+  const id = r.stdout.match(/name it as (farm-[0-9a-f]{6})\n$/)[1];
+  assert.match(fs.readFileSync(path.join(root, 'content/settlement-of-iceland/shared/images', id, 'image.yaml'), 'utf8'), /^caption: The farm\nsha256: [0-9a-f]{64}\n$/);
+  assert.match(run(root, 'rehash').stdout, /^wrote the sha256 of 0 image folders\n$/);
+  assert.match(run(root, 'image', 'farm.png', 'farm').stderr, /^error: usage: harita image <file> <name> --caption <text>/);
+});

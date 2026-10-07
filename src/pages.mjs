@@ -61,7 +61,8 @@ ${entries.map(e => `<url><loc>${esc(e.loc)}</loc>${e.alternates.map(a => `<xhtml
 // The site as the page builders use it: url ends in a slash, abs() turns a path from the site root into a URL.
 export function siteContext({ url, title, languages, defaultLanguage }) {
   const base = url ? url.replace(/\/?$/, '/') : null;
-  return { url: base, title, langs: languages, defaultLang: defaultLanguage, abs: p => base + p, root: base ? new URL(base).pathname : '/' };
+  // abs resolves ../ as well, for an image in dist/images/ that a story names as ../images/<id>
+  return { url: base, title, langs: languages, defaultLang: defaultLanguage, abs: p => new URL(p, base).href, root: base ? new URL(base).pathname : '/' };
 }
 
 // Every file of one story folder: the bare and per language overviews, a page per step and language, the story as

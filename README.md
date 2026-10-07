@@ -26,10 +26,10 @@ Add to `package.json`:
 
 Then create `content/` as described below, and add `.cache/` to `.gitignore`. `npm run build` writes
 `dist/`: the main page listing the stories, each story's pages under `dist/<story>/`, the story data in
-`dist/<story>/story.js`, the script all story pages share in `dist/harita.js`, and the elevation tiles in
-`dist/terrain/`. `dist/404.html` answers unknown paths on GitHub Pages and links back to the main page.
-Links are relative, so `dist/` works from `npm run dev` and from any static host or subpath. Opened as a
-file, a story shows its map without the relief.
+`dist/<story>/story.js`, the script all story pages share in `dist/harita.js`, the images every story can show
+in `dist/images/`, and the elevation tiles in `dist/terrain/`. `dist/404.html` answers unknown paths on GitHub
+Pages and links back to the main page. Links are relative, so `dist/` works from `npm run dev` and from any
+static host or subpath. Opened as a file, a story shows its map without the relief.
 
 ## URLs
 
@@ -96,13 +96,16 @@ to the working directory, and a `log` function for progress lines, which default
 problem in the content throws an `Error` whose message names the file and the field.
 
 ```js
-import { build, check, dev, i18n, patterns, schema } from '@openhistoryatlas/harita';
+import { build, check, dev, i18n, image, findImage, imageIndex, rehash, patterns, schema } from '@openhistoryatlas/harita';
 
 const { dist, stories } = await build({ root }); // writes root/dist with the elevation tiles, one card per story
 await build({ root, only: ['my-story'] });       // that story and the main page, the others as they were
 const problems = check({ root, story: 'my-story' }); // every problem in the story's pages, [] when none
 const server = dev({ root, port: 8080 });       // watches, rebuilds and serves; an http.Server
 i18n({ root, lang: 'tr' });                     // writes the catalogues for one language
+const id = image({ root, file, name: 'farm', caption: 'The farm', source }); // the image folder for a file, see Images
+const held = findImage(imageIndex({ root }), { source, file }); // the image folder that holds it already, or null
+rehash({ root });                               // writes each image folder's sha256 into its image.yaml
 const alike = patterns({ root, fix: false });   // the family pairs that look alike, [] when none
 schema.check(schema.Page, data, 'page.yaml');   // the zod schema of every content file
 ```
@@ -122,23 +125,26 @@ cd example && node ../bin/harita.mjs build   # the example as a reader sees it, 
 ```
 site.yaml                   main page title and intro, languages, story order; optional
 content/
+  shared/battles/<id>/      a battle any story can include, see Battles
+  shared/images/<id>/       an image any story or battle can show, see Images
   <story>/
     story.yaml              title, languages, map extent, countries, land, zone families
     shared/
       zones/*.geojson       zones used by more than one page
       routes/*.geojson
       markers.yaml
-      images.yaml + images/ shared images
+      battles/<id>/         a battle of this story alone
+      images/<id>/          an image of this story and its own battles
     pages/
       010-1919/             a folder without page.yaml is a header in the left nav
         group.yaml          its title per language, optional, else the folder name
         010-may/            headers nest to any depth
           010-occupation/   a folder with page.yaml is a page
-            page.yaml       date, when, title, bbox, which zones, routes, markers are on, images, sources
+            page.yaml       date, when, title, bbox, which zones, routes, markers are on, sources
             text/<lang>.md  one file per language in story.yaml
-            images/
             zones/, routes/, markers.yaml   same formats as shared/, scoped by convention only
         020-congresses/
+        030-sakarya/        a folder with include.yaml places a battle's pages, see Battles
       020-1920/
 .cache/harita/              elevation tiles the build downloaded and each story's cleaned zones, kept between builds
 ```
@@ -147,8 +153,8 @@ The number prefix on every folder sets the order, at each level. Nothing else do
 one day, a page for a month and a page for a span of years sit side by side with no special casing.
 Leave gaps in the numbers, 010, 020, so a page can be inserted later.
 
-Ids are global within a story and come from the folder name without its prefix. A zone, route, marker or
-image defined in any page is visible to every page.
+Ids are global within a story and come from the folder name without its prefix. A zone, route or marker
+defined in any page is visible to every page. The ids in a battle folder belong to the battle.
 
 Every file is checked against a schema in `src/schema.mjs` before use. The build stops on the first bad
 file and lists each problem with its field path, for example `bbox: Too small: expected array to have
@@ -181,16 +187,14 @@ of the main page, so it differs from every language code.
 ### Languages
 
 Content strings are English inline. Every other language lives in one catalogue per story,
-`content/<story>/i18n/<lang>.yaml`, and one for the site, `i18n/<lang>.yaml`, keyed by the stable ids the
-content already has:
+`content/<story>/i18n/<lang>.yaml`, one per battle and image folder, and one for the site, `i18n/<lang>.yaml`, keyed by
+the stable ids the content already has:
 
 ```yaml
 # Occupation, and the landing at Samsun
 pages.occupation.title: "İşgal ve Samsun’a çıkış"
 markers.samsun.note: "Mustafa Kemal karaya çıkar, 19 Mayıs 1919"
 zones.british.name: "İtilaf (İngiliz) işgali, İstanbul ve Boğazlar"
-battles.sakarya.sides.0.name: "Türkiye Büyük Millet Meclisi"
-images.izmir-1919.caption: "Yunan evzon askerleri İzmir’de, 15 Mayıs 1919"
 ```
 
 Keys follow the content's ids:
@@ -202,10 +206,9 @@ Keys follow the content's ids:
 | `story.yaml` labels names | `labels.<Natural Earth name>` |
 | `group.yaml` title | `groups.<folder id>.title` |
 | `page.yaml` date, title, sources, map_sources | `pages.<id>.date`, `pages.<id>.title`, `pages.<id>.sources.<n>`, `pages.<id>.map_sources.<n>` |
-| images | `images.<id>.caption`, `images.<id>.credit` |
+| an image or battle folder | the folder's own catalogue, see [Images](#images) and [Battles](#battles) |
 | markers | `markers.<id>.label`, `markers.<id>.note` |
 | zones, routes | `zones.<id>.name`, `routes.<id>.name` |
-| battles | `battles.<id>.name`, `.date`, `.result`, `.sides.<n>.name`, `.sides.<n>.commanders.<m>`, `.sides.<n>.strength`, `.sides.<n>.casualties` |
 | emblem feature names | `emblems.<page id>.<feature id>` |
 
 Long texts stay in `text/<lang>.md`. To add a language: list it in `story.yaml`, write the markdown
@@ -266,7 +269,7 @@ appears on. It edits the family's `{ ... }` line in place and repeats until no p
 id: turkiye-1919-1923
 title: Türkiye, 1919 to 1923
 summary: From the occupation to the Republic.   # card text on the main page, optional
-cover: cover.jpg                    # card image, a file in the story folder, optional
+cover: izmir-quay-5b2e07            # card image on the main page, an image the story can show, optional
 span: 1919 to 1923                  # card date line, optional, else the years from the pages' when
 theme: navy                         # override the site theme for this story, optional
 labels:                             # country names on the map, optional
@@ -282,6 +285,7 @@ families:
   british: { priority: 0, color: "#a06b1f", color_dark: "#d19b4a" }
   greek:   { priority: 3, color: "#2f6a9f", color_dark: "#6fa3d6" }
   held:    { priority: 0, color: "#c62828", pattern: cross }   # hatch, cross or dots over the tint
+  ottoman: { priority: 1, color: "#b8333a", aliases: [ottomans] }   # battle families that take these colours, see Battles
 smoothing: 4                        # corner rounding passes before the clip
 max_zoom: 14                        # how close a page and a reader can zoom, 11 to 16, 11 by default; relief tiles follow to 15
 ```
@@ -297,11 +301,6 @@ camera: { pitch: 55, bearing: 20 }  # optional, the view in 3D, see Relief and 3
 zones: [british, greek1919]
 routes: []
 markers: [istanbul, izmir]
-images:
-  izmir-1919:
-    file: izmir-1919.svg            # in this page's images/
-    caption: Greek troops landing at İzmir, 15 May 1919
-    credit: Wikimedia Commons, public domain
 sources:
   - "Andrew Mango, Atatürk (1999), ch. 10."
 map_sources:                        # optional, map data the page draws beyond the base map
@@ -318,10 +317,49 @@ when a page starts before the page preceding it in folder order, naming both fol
 
 ### text/<lang>.md
 
-Markdown. A line of the form `@image <id>` places that image as a figure at that point in the text. A line
-that opens with a number and a full stop stays text, as Turkish ordinals do ("21. yüzyılda"), so a text has no
-numbered lists.
+Markdown. A line of the form `@image <id>` places that image, see [Images](#images), as a figure at that point in
+the text. A line that opens with a number and a full stop stays text, as Turkish ordinals do ("21. yüzyılda"), so a
+text has no numbered lists.
 Clicking a figure, or a marker's photo on the map, opens it large over the map.
+
+### Images
+
+Every image is a folder of its own, so a story, its pages and its battles store one file however often they show it:
+
+```
+content/shared/images/hastings-knights-3f9a1c/      any story or battle can show it
+content/<story>/shared/images/<id>/                 that story and its own battles can show it
+  image.jpg            the file, image.<ext>
+  image.yaml           caption, credit, source, sha256
+  i18n/<lang>.yaml     the caption in other languages, keys image.caption and image.credit
+```
+
+```yaml
+# image.yaml
+caption: Norman knights and archers on the Bayeux Tapestry
+credit: Wikimedia Commons, public domain        # optional
+source: https://commons.wikimedia.org/wiki/File:Bayeux_Tapestry_scene51_Battle_of_Hastings_Norman_knights_and_archers.jpg
+sha256: 9c1e…                                    # of image.jpg, harita image and harita rehash write it
+default_language: en                             # the language of the caption, en by default
+```
+
+The folder name is the image's id: a name and six hex digits, so two images added at the same time on different
+branches get different folders. A text shows the image with `@image hastings-knights-3f9a1c`, a marker with
+`image:`, a battle card in its `images` list and a story's `cover` names it as well.
+
+`harita image <file> <name> --caption <text> [--credit <text>] [--source <url>] [--story <id>]` adds an image and
+prints its id. It first looks through every image folder for the same `source` page, then for the same bytes. A
+folder that holds the image already is used again, and one of another story moves to `content/shared/images/` so
+that both stories show it. Else it makes a folder with a fresh suffix, in `content/shared/images/` or with
+`--story` in the story's, with the default language of the story or of `site.yaml`. `findImage` in the library runs
+the same lookup, so a download script can skip what the content holds.
+
+`harita build --strict` holds every image it ships to the `sha256` its `image.yaml` records. After an image file
+changes, `harita rehash` writes the new hashes.
+
+A story's `dist/<story>/images/` holds the images it shows, and `dist/images/` the ones from `content/shared/`, once
+for the whole site. Moving an image folder from a story's `shared/images/` to `content/shared/images/` keeps every
+reference to it working.
 
 ### Zones
 
@@ -366,31 +404,81 @@ the page lists them, so the reader sees the first move first.
 
 ### Battles
 
-A page can carry one battle, `battle: sakarya`, defined in a `battles.yaml` beside `markers.yaml`. It shows as
-a crossed swords marker and opens a card on the map in the shape of a Wikipedia infobox: name, date,
-result, one column per side with commanders, strength and casualties, photos stepped with arrows, and a
-source link. An
-optional `front` line is drawn while the page is open. One battle per page is a rule, so the map stays
-readable.
+A battle is a folder that holds its card, its pages and its translations. A story includes the folder, so two
+stories that cover one battle share it. The folder sits in `content/shared/battles/<id>/`, where every story can
+use it, or in `content/<story>/shared/battles/<id>/` for one story. The folder name is the battle's id. End it with
+the year, `kosovo-1389` and `kosovo-1448`, so that battles of one place stay apart.
+
+```
+content/shared/battles/ankara-1402/
+  battle.yaml            the card, colours and zoom
+  markers.yaml, routes/  optional, markers and routes for the battle's pages
+  i18n/<lang>.yaml       the battle's catalogues
+  pages/                 optional, the battle's pages, in the format of a story's pages/
+```
+
+The card shows as a crossed swords marker and opens on the map in the shape of a Wikipedia infobox: name, date,
+result, one column per side with commanders, strength and casualties, photos stepped with arrows, and a source
+link. An optional `front` line is drawn while a page shows the battle.
 
 ```yaml
-sakarya:
-  lnglat: [32.14, 39.58]
-  name: Battle of Sakarya
-  date: 23 August – 13 September 1921
-  result: Turkish victory
-  source: https://en.wikipedia.org/wiki/Battle_of_Sakarya
-  images: [sakarya-1921, sakarya-2]   # optional, stepped through with arrows on the card
-  front: [[31.65, 40.25], [31.95, 39.75], [31.60, 39.15]]   # optional
-  sides:
-    - name: Grand National Assembly
-      color: "#b8333a"               # a hex colour or a family id
-      commanders: [Mustafa Kemal Pasha, Fevzi Pasha]
-      strength: 96,000 men
-      casualties: 5,713 killed
-    - name: Kingdom of Greece
-      color: greek
+# battle.yaml
+lnglat: [32.95, 40.03]
+name: Battle of Ankara
+date: 20 July 1402
+result: Timurid victory
+source: https://en.wikipedia.org/wiki/Battle_of_Ankara
+front: [[32.90, 40.05], [32.98, 40.00]]   # optional
+default_language: en                      # the language this folder is written in, en by default
+max_zoom: 14                              # optional, how close the battle's pages zoom, when closer than the story's
+families:                                 # the colours the sides, battle plans and markers name
+  ottoman: { color: "#b8333a", color_dark: "#e0646a" }
+  timurid: { color: "#2f6a9f", color_dark: "#6fa3d6" }
+images: [bayezid-captive-5c01d7]          # optional, stepped through with arrows on the card
+sides:
+  - name: Timurid Empire
+    color: timurid                        # a family of the battle or a hex colour
+    commanders: [Timur, Shah Rukh]
+    strength: 140,000
+  - name: Ottoman Empire
+    color: ottoman
+    commanders: [Bayezid I]
 ```
+
+A story shows a battle in one of two ways:
+
+- A page with `battle: ankara-1402` shows the card. One battle per page keeps the map readable.
+- A folder in the page tree that holds an `include.yaml` places the battle's pages there, under a header with the
+  battle's name. The folder's number sets the place, and the `when` check runs over the battle's pages where they
+  sit.
+
+```yaml
+# content/timur/pages/030-anatolia/040-ankara/include.yaml
+battle: ankara-1402
+zones: [timurid-1402, ottoman-1402]   # optional, story zones shown on every page of the battle
+markers: [ankara]                     # optional, story markers shown on every page of the battle
+```
+
+A battle's page is a folder with `page.yaml` and `text/<lang>.md`, and optionally `markers.yaml` and `routes/`,
+as in a story. Its zones come from the include, and `battle: true` opens the battle's card. Its markers and routes
+are the battle's own. A battle shows the images of `content/shared/images/`, and a story's own battle those of the
+story as well. In the story the page's id is `<battle>-<page>`, so its address is
+`/timur/en/ankara-1402-deployment/`.
+
+A battle family takes the colours of the story family with the same id, so the battle's sides match the story's
+zones. A story family with another id lists the battle's in `aliases`:
+
+```yaml
+families:
+  timur: { priority: 1, color: "#2f6a9f", aliases: [timurid] }
+```
+
+A battle family that no story family matches keeps the battle's colours, and the build prints a warning.
+
+The battle's other languages come from its `i18n/<lang>.yaml`, keyed like a story's catalogue with `battle.` in
+front of the card's fields: `battle.name`, `battle.sides.0.name`, `pages.deployment.title`. `harita i18n <lang>`
+writes it. A battle shows in every language of the story that uses it, and a string or a text it lacks shows in
+its `default_language`. The build prints each battle's coverage, and `--strict` fails on a gap.
 
 ### Emblems
 
@@ -403,7 +491,7 @@ emblem: { kind: crescent-star, center: [35.4, 39.1], width_km: 320, color: "#fff
 The kind names `plugins/emblems/<kind>.mjs` in the content project, else an emblem harita ships, so a
 project file of the same name replaces a built-in kind. A plugin exports a function
 `(params, { turf, families }) => FeatureCollection` of polygons. `families` is the story's families from
-`story.yaml`.
+`story.yaml`, or on a battle's page the battle's from `battle.yaml`.
 
 Each feature's properties set how it looks and what the reader can point at:
 
@@ -432,8 +520,8 @@ emblem:
   clashes: [[lon, lat], { at: [lon, lat], size: 250 }]
 ```
 
-- `side` is a family of the story, `neutral` for grey, or a hex colour. Water takes the story's `water`
-  family when it has one, else a blue.
+- `side` is a family of the story, or of the battle on a battle's page, `neutral` for grey, or a hex colour.
+  Water takes the `water` family when there is one, else a blue.
 - `land` fills ground that the base map's coast misses at the scale of a battle, such as an island in an
   estuary, in the land colour of the nearest country in every theme. Water drawn after it cuts channels through it.
 - `facing` is the compass bearing a unit faces. `width` runs along its front and `depth` from front to back.
@@ -466,8 +554,8 @@ emblem:
 | `square`     | a square ring                         | an infantry square                      |
 | `fort`       | walls round a court, corner bastions  | forts and castles, `width` across       |
 
-A battle plan of one or two kilometres needs a closer zoom than the default, so a story with battle plans
-sets `max_zoom` in `story.yaml`. The example's last page draws one.
+A battle plan of one or two kilometres needs a closer zoom than the default, so a battle with battle plans
+sets `max_zoom` in `battle.yaml`. The example's battle draws one.
 
 A battle with several phase pages is easier to lay out from a script than by hand. The script works in a
 local frame, metres along and across the battle line, and writes each phase into its page:
@@ -475,7 +563,7 @@ local frame, metres along and across the battle line, and writes each phase into
 ```js
 import { frame, planWriter } from '@openhistoryatlas/harita/plans';
 
-const writePlan = planWriter('content/punic-wars');    // the story folder
+const writePlan = planWriter('content/punic-wars');    // the story folder, or a battle folder
 const f = frame([16.133, 41.297], 330);   // origin [lon, lat]; u runs along bearing 330, w along 330 + 90
 f.p(1800, -500)                           // [lon, lat] of the point u = 1800 m, w = -500 m
 f.path([[0, 0], [1800, -500]])            // the same for a list of points
@@ -497,7 +585,7 @@ so a plan's water and walls can follow it. The same list comes from `coast(count
 The map shades the relief from elevation tiles: Terrarium PNGs from the
 [terrain tiles on AWS](https://registry.opendata.aws/terrain-tiles/). The build cuts the tiles a story
 needs into `dist/terrain/`: the story's `extent` down to zoom 7, then each page's `bbox`, with a tenth more
-on every side, at the zooms the page opens at, up to one past the story's `max_zoom` and at most 15. The sea is flattened to 0 m and stays unshaded.
+on every side, at the zooms the page opens at, up to one past the page's max zoom and at most 15. The sea is flattened to 0 m and stays unshaded.
 The first build of an area downloads its tiles into `.cache/harita/` in the project, and later builds read
 them from there; in CI, keep that folder between runs. A country sized story comes to about 25 MB, of
 which a reader downloads only the tiles in view. The shading takes its colours from the theme.
@@ -524,7 +612,7 @@ samsun:
   lnglat: [36.33, 41.29]
   icon: star                        # any Lucide icon name, see https://lucide.dev/icons
   color: greek                      # a family, or leave out for the accent colour
-  image: samsun-1919                # optional, shows a photo thumbnail on the map
+  image: samsun-1919-4be2a0         # optional, shows a photo thumbnail on the map
   label: Samsun
   note: Mustafa Kemal lands, 19 May 1919
 ```
@@ -537,4 +625,5 @@ elevation tiles for its extent and pages.
 
 While writing, `npx harita check <id> [page id ...]` reads the story's pages, their texts, images, markers,
 battles, routes and emblems, and prints every problem it finds, or `ok`. It leaves out the zone geometry and
-the elevation tiles, so it takes about a second. Page ids narrow it to those pages and `shared/`.
+the elevation tiles, so it takes about a second. Page ids narrow it to those pages and the files outside any
+page.

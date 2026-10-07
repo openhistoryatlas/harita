@@ -26,9 +26,10 @@ test('a frame places points given in metres and turns relative bearings into com
 test('writePlan writes the emblem, bbox, markers and routes and keeps the rest of the page', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-plans-'));
   fs.cpSync(EXAMPLE, root, { recursive: true });
-  const story = path.join(root, 'content/settlement-of-iceland'), page = path.join(story, 'pages/040-althing-battle');
-  const f = frame([-21.116, 64.258], 0), writePlan = planWriter(story);
-  writePlan('pages/040-althing-battle', {
+  // a battle folder is the root of its own pages, as a story folder is
+  const battle = path.join(root, 'content/shared/battles/althing-1012'), page = path.join(battle, 'pages/020-fight');
+  const f = frame([-21.116, 64.258], 0), writePlan = planWriter(battle);
+  writePlan('pages/020-fight', {
     bbox: f.box([[-500, -500], [500, 500]], 100),
     emblem: { units: [{ side: 'neutral', type: 'archers', at: f.p(0, 0), width: 200, depth: 60, facing: f.face(0), name: { en: 'Bowmen' } }] },
     markers: { lawrock: { lnglat: f.p(100, 0), icon: 'landmark', label: { en: 'Lögberg' } } },

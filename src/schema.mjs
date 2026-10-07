@@ -36,16 +36,17 @@ export const Story = z.object({
   title: Translatable,
   summary: Translatable.optional(),
   span: Translatable.optional(),
-  cover: z.string().optional(),
+  cover: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'the id of an image folder the story can show, harita image <file> <name> --story <story> makes one').optional(), // the card on the main page
   languages: z.array(Lang).min(1),
   default_language: Lang.optional(),
   extent: Bbox,
   land: z.array(z.string()).min(1),
   countries: z.array(z.string()).min(1),
   hillshade: z.string().optional(), // read by harita 0.2.4 and earlier; the build asks for its removal
-  families: z.record(Id, z.object({ priority: z.number().int(), color: Hex, color_dark: Hex.optional(), pattern: z.enum(['hatch', 'cross', 'dots']).optional() }).strict()),
+  // aliases: battle family ids that take this family's colours, for a battle that names the side another way
+  families: z.record(Id, z.object({ priority: z.number().int(), color: Hex, color_dark: Hex.optional(), pattern: z.enum(['hatch', 'cross', 'dots']).optional(), aliases: z.array(Id).optional() }).strict()),
   smoothing: z.number().int().min(0).max(10).default(4),
-  max_zoom: z.number().min(11).max(16).default(11), // battle plans need more; the relief tiles follow it to zoom 15
+  max_zoom: z.number().min(11).max(16).default(11), // a battle's pages may zoom closer, and the relief tiles follow to zoom 15
   theme: Id.optional(),
   // country names on the map; names overrides the Natural Earth name, hide leaves a country unlabelled
   labels: z.object({ countries: z.boolean().default(false), names: z.record(z.string(), Translatable).default({}), hide: z.array(z.string()).default([]) }).strict().optional(),
@@ -53,8 +54,10 @@ export const Story = z.object({
 
 export const Group = z.object({ title: Translatable.optional() }).strict();
 
-export const Image = z.object({ file: z.string(), caption: Translatable, credit: Translatable.optional() }).strict();
-export const Images = z.record(Id, Image);
+// image.yaml in an image folder, content/shared/images/<id>/ or content/<story>/shared/images/<id>/, beside image.<ext>
+// source: the page the file came from, such as its Commons file page. sha256: the file's, checked by --strict
+export const ImageFolder = z.object({ caption: Translatable, credit: Translatable.optional(), default_language: Lang.default('en'),
+  source: z.string().url().optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/, '64 hex digits, harita rehash writes it').optional() }).strict();
 
 // A tilted 3D view over the terrain: pitch from straight down, bearing clockwise from north, heights times exaggeration.
 export const Camera = z.object({ pitch: z.number().min(10).max(60).default(50), bearing: z.number().min(-180).max(180).default(0), exaggeration: z.number().min(0.5).max(5).default(2) }).strict();
@@ -67,12 +70,12 @@ export const Page = z.object({
   zones: z.array(Id).default([]),
   routes: z.array(Id).default([]),
   markers: z.array(Id).default([]),
-  battle: Id.optional(), // one battle per page keeps the map readable
+  battle: z.union([Id, z.literal(true)]).optional(), // one battle per page keeps the map readable, and a battle's own page writes true
   camera: z.union([z.literal(false), Camera]).optional()
     .refine(c => c !== false, 'pages open flat until the reader picks 3D, so camera: false has no use: remove it'),
   // an emblem drawn on the map while the page is open: plugins/emblems/<kind>.mjs, else one harita ships
   emblem: z.object({ kind: Id }).passthrough().optional(),
-  images: Images.default({}),
+  images: z.unknown().optional().refine(v => v === undefined, 'images live in image folders, content/<story>/shared/images/<name>-<six hex digits>/, and harita image <file> <name> makes one'),
   sources: z.array(Translatable).default([]),
   // map data the page draws beyond the base map, credited in an "Other sources" popup on the map
   map_sources: z.array(z.object({ text: Translatable, url: z.string().url().optional() }).strict()).default([]),
@@ -118,16 +121,28 @@ const Side = z.object({
   strength: Translatable.optional(),
   casualties: Translatable.optional(),
 }).strict();
-export const Battles = z.record(Id, z.object({
+// battle.yaml in a battle folder, content/shared/battles/<id>/ or content/<story>/shared/battles/<id>/
+export const Battle = z.object({
   lnglat: z.tuple([Lon, Lat]),
   name: Translatable,
   date: Translatable,
   result: Translatable.optional(),
   sides: z.array(Side).min(1).max(3),
-  images: z.array(Id).default([]), // shown in the card, one at a time with arrows
+  images: z.array(Id).default([]), // shown in the card in this order, one at a time with arrows
   source: z.string().url().optional(),
   front: z.array(z.tuple([Lon, Lat])).min(2).optional(), // a line drawn while the battle is on the page
-}).strict());
+  default_language: Lang.default('en'), // the language of the inline strings
+  max_zoom: z.number().min(11).max(16).optional(), // for the battle's pages, when it is closer than the story's
+  // the colours the battle names, which a story family with the same id or alias replaces
+  families: z.record(Id, z.object({ color: Hex, color_dark: Hex.optional() }).strict()).default({}),
+}).strict();
+
+// include.yaml: a folder in a story's page tree that places a battle's pages there
+export const Include = z.object({
+  battle: Id,
+  zones: z.array(Id).default([]),   // story zones shown on every page of the battle
+  markers: z.array(Id).default([]), // story markers shown on every page of the battle
+}).strict();
 
 const Ring = z.array(z.tuple([Lon, Lat])).min(4);
 export const Zone = z.object({

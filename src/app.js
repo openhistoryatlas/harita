@@ -344,8 +344,12 @@ function camera(page, duration){
   if (c) m.setTerrain({ source:'dem-3d', exaggeration: c.exaggeration });
   else if (m.getTerrain()) m.once('moveend', () => { if (ML.camera === token) m.setTerrain(null); });
   const bearing = c ? c.bearing : 0, pitch = c ? c.pitch : 0;
-  const cam = m.cameraForBounds([[page.bbox[0], page.bbox[1]], [page.bbox[2], page.bbox[3]]], { padding: fitPadding(), bearing, pitch });
+  // a battle's pages may zoom closer than the story: the closer limit of the two pages holds during the flight
+  const top = page.maxZoom ?? B.maxZoom ?? 11;
+  m.setMaxZoom(Math.max(m.getMaxZoom(), top));
+  const cam = m.cameraForBounds([[page.bbox[0], page.bbox[1]], [page.bbox[2], page.bbox[3]]], { padding: fitPadding(), bearing, pitch, maxZoom: top });
   m.flyTo({ center: cam.center, zoom: cam.zoom, bearing, pitch, duration });
+  if (!m.isMoving()) m.setMaxZoom(top); else m.once('moveend', () => { if (ML.camera === token) m.setMaxZoom(top); });
   freeCamera(!!c);
 }
 // in 3D the reader may turn and tilt: right drag or Ctrl drag with a mouse, two fingers on a touch screen

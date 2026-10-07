@@ -7,13 +7,17 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { PNG } from 'pngjs';
 import * as turf from '@turf/turf';
-import { build, check, i18n, patterns, schema } from '../src/index.mjs';
+import { build, check, i18n, image, patterns, rehash, schema } from '../src/index.mjs';
 import { cut, terrainPlan, BASE_ZOOM } from '../src/terrain.mjs';
 import { describe } from '../src/pages.mjs';
 import * as tc from 'topojson-client';
 
 const EXAMPLE = fileURLToPath(new URL('../example/', import.meta.url));
 const STORY = 'content/settlement-of-iceland';
+// the example's shared battle, its battle plan page, and the story's include of it
+const BATTLE = 'content/shared/battles/althing-1012';
+const PLAN = `${BATTLE}/pages/020-fight/page.yaml`;
+const INCLUDE = `${STORY}/pages/040-althing-battle/include.yaml`;
 const quiet = () => {};
 function copy() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-'));
@@ -32,12 +36,27 @@ const bundleOf = (root, id = 'settlement-of-iceland') => { const js = fs.readFil
 const zoneGeometry = (B, id) => tc.feature(B.zoneShapes, B.zoneShapes.objects.zones.geometries.find(g => g.id === id)).geometry;
 const append = (root, file, text) => fs.appendFileSync(path.join(root, file), '\n' + text + '\n');
 const edit = (root, file, from, to) => fs.writeFileSync(path.join(root, file), fs.readFileSync(path.join(root, file), 'utf8').replace(from, to));
+// a language in the story, with a copy of the English text on every page, the battle's pages included
+function addLanguage(root, lang, story = STORY) {
+  edit(root, `${story}/story.yaml`, /languages: \[([^\]]*)\]/, (_, l) => `languages: [${l}, ${lang}]`);
+  for (const dir of [path.join(root, story, 'pages'), path.join(root, BATTLE, 'pages')])
+    for (const f of fs.readdirSync(dir, { recursive: true })) if (f.endsWith('en.md')) fs.copyFileSync(path.join(dir, f), path.join(dir, f.replace(/en\.md$/, `${lang}.md`)));
+}
+// every string of the catalogues filled in
+const fillCatalogue = (root, file) => fs.writeFileSync(path.join(root, file), fs.readFileSync(path.join(root, file), 'utf8').replace(/: ""$/gm, ': "x"'));
+// an svg file whose bytes differ by its text, so harita image sees distinct images
+const svgFile = (root, text) => { const f = path.join(root, `${text}.svg`); fs.writeFileSync(f, `<svg xmlns="http://www.w3.org/2000/svg"><title>${text}</title></svg>`); return f; };
+// a battle of the story's own with a card and no pages
+function skirmish(root, side = '{ name: Settlers }') {
+  fs.mkdirSync(path.join(root, STORY, 'shared/battles/skirmish-900'), { recursive: true });
+  fs.writeFileSync(path.join(root, STORY, 'shared/battles/skirmish-900/battle.yaml'), `lnglat: [-21.9, 64.1]\nname: A skirmish\ndate: "900"\nsides: [${side}]\n`);
+}
 
 test('build writes the site index and one page per story', async () => {
   const root = copy(), lines = [];
   const r = await make(root, { log: l => lines.push(l) });
   assert.equal(r.dist, path.join(root, 'dist'));
-  assert.deepEqual(r.stories.map(s => [s.id, s.pages]), [['settlement-of-iceland', 4]]);
+  assert.deepEqual(r.stories.map(s => [s.id, s.pages]), [['settlement-of-iceland', 5]]);
   const page = fs.readFileSync(path.join(root, 'dist/settlement-of-iceland/story.js'), 'utf8');
   assert.ok(page.startsWith('const BUNDLE = {"id":"settlement-of-iceland"'));
   assert.ok(page.includes('Þingvellir'));
@@ -85,7 +104,7 @@ test('emblem features are coloured by family and named for the hover label', asy
 
 test('land in a battle plan takes the tint of the nearest country and draws first', async () => {
   const root = copy();
-  edit(root, `${STORY}/pages/040-althing-battle/page.yaml`, '  kind: battle-plan\n', '  kind: battle-plan\n  land:\n    - { area: [[-21.14, 64.25], [-21.13, 64.25], [-21.13, 64.255]] }\n');
+  edit(root, PLAN, '  kind: battle-plan\n', '  kind: battle-plan\n  land:\n    - { area: [[-21.14, 64.25], [-21.13, 64.25], [-21.13, 64.255]] }\n');
   await make(root);
   const b = bundleOf(root), iceland = b.topo.objects.countries.geometries.find(g => g.properties.name === 'Iceland').properties.tint;
   const plan = b.pages.find(p => p.emblem?.features.some(f => f.properties.land));
@@ -102,13 +121,17 @@ test('a paragraph opening with an ordinal stays a paragraph', async () => {
   assert.match(fs.readFileSync(path.join(root, 'dist/settlement-of-iceland/en.md'), 'utf8'), /^21\\\. yüzyılda/m);
 });
 
-test('a story sets how close the map zooms, 11 by default', async () => {
+test("a story sets how close the map zooms, 11 by default, and a battle's pages zoom as close as the battle sets", async () => {
   const root = copy();
   await make(root);
-  assert.equal(bundleOf(root).maxZoom, 13);
-  edit(root, `${STORY}/story.yaml`, /^max_zoom:.*\n/m, '');
+  const B = bundleOf(root);
+  assert.equal(B.maxZoom, 11);
+  assert.deepEqual(B.pages.map(p => p.maxZoom), [11, 11, 11, 13, 13]);
+  assert.equal(B.terrain.maxzoom, 14, 'the relief follows the battle plan to one zoom past the battle');
+  append(root, `${STORY}/story.yaml`, 'max_zoom: 14');
   await make(root);
-  assert.equal(bundleOf(root).maxZoom, 11);
+  assert.equal(bundleOf(root).maxZoom, 14);
+  assert.deepEqual(bundleOf(root).pages.map(p => p.maxZoom), [14, 14, 14, 14, 14]);
 });
 
 test('a named emblem feature without an id fails', async () => {
@@ -166,7 +189,7 @@ test('patterns finds families that look alike and fixes one with a pattern', asy
 
 test('schema fills defaults and lists every bad field at once', async () => {
   const page = schema.check(schema.Page, { date: '930', title: 'x', bbox: [-25, 63, -13, 67] }, 'page.yaml');
-  assert.deepEqual([page.zones, page.routes, page.markers, page.sources, page.images], [[], [], [], [], {}]);
+  assert.deepEqual([page.zones, page.routes, page.markers, page.sources], [[], [], [], []]);
   assert.throws(() => schema.check(schema.Story, { id: 'Bad Id', title: 'x' }, 'story.yaml'), err => {
     assert.match(err.message, /^story\.yaml:\n/);
     assert.match(err.message, /\n  id: lowercase letters/);
@@ -178,8 +201,7 @@ test('schema fills defaults and lists every bad field at once', async () => {
 test('a language harita does not ship gets an interface catalogue and counts its gaps', async () => {
   const { i18n } = await import('../src/index.mjs');
   const root = copy();
-  edit(root, `${STORY}/story.yaml`, 'languages: [en]', 'languages: [en, de]');
-  for (const f of fs.readdirSync(path.join(root, STORY, 'pages'), { recursive: true })) if (f.endsWith('en.md')) fs.copyFileSync(path.join(root, STORY, 'pages', f), path.join(root, STORY, 'pages', f.replace(/en\.md$/, 'de.md')));
+  addLanguage(root, 'de');
   i18n({ root, lang: 'de', log: quiet });
   const ui = fs.readFileSync(path.join(root, 'i18n/ui/de.yaml'), 'utf8');
   assert.match(ui, /# Prev\nprev: ""/);
@@ -188,8 +210,7 @@ test('a language harita does not ship gets an interface catalogue and counts its
   await make(root, { log: l => lines.push(l) });
   assert.ok(lines.some(l => /de interface: 0 of \d+ strings translated/.test(l)));
   // with the content translated, the interface is what --strict still stops on
-  const cat = path.join(root, STORY, 'i18n/de.yaml');
-  fs.writeFileSync(cat, fs.readFileSync(cat, 'utf8').replace(/: ""$/gm, ': "x"'));
+  fillCatalogue(root, `${STORY}/i18n/de.yaml`); fillCatalogue(root, `${BATTLE}/i18n/de.yaml`);
   await assert.rejects(make(root, { strict: true }), /de interface: \d+ strings missing/);
 });
 
@@ -235,10 +256,10 @@ test('four zones of two families meeting at a point leave no gap and do not over
 
 test('a battle page has no camera of its own, the story carries the default one, and camera: false asks to go', async () => {
   const root = copy(), pages = `${STORY}/pages`;
-  fs.writeFileSync(path.join(root, STORY, 'shared/battles.yaml'), 'skirmish:\n  lnglat: [-21.9, 64.1]\n  name: A skirmish\n  date: "900"\n  sides: [{ name: Settlers }]\n');
-  append(root, `${pages}/010-landnam/page.yaml`, 'battle: skirmish');
+  skirmish(root);
+  append(root, `${pages}/010-landnam/page.yaml`, 'battle: skirmish-900');
   await make(root);
-  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [null, null, { pitch: 55, bearing: 40, exaggeration: 2 }, null]);
+  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [null, null, { pitch: 55, bearing: 40, exaggeration: 2 }, null, null]);
   assert.deepEqual(bundleOf(root).camera, { pitch: 50, bearing: 0, exaggeration: 2 });
   append(root, `${pages}/010-landnam/page.yaml`, 'camera: false');
   await assert.rejects(make(root), /pages open flat until the reader picks 3D, so camera: false has no use: remove it/);
@@ -256,8 +277,7 @@ test('a page lists its other map sources with links, in every language', async (
 
 test('a language written right to left ships dir rtl, English ltr', async () => {
   const root = copy();
-  edit(root, `${STORY}/story.yaml`, 'languages: [en]', 'languages: [en, ar]');
-  for (const f of fs.readdirSync(path.join(root, STORY, 'pages'), { recursive: true })) if (f.endsWith('en.md')) fs.copyFileSync(path.join(root, STORY, 'pages', f), path.join(root, STORY, 'pages', f.replace(/en\.md$/, 'ar.md')));
+  addLanguage(root, 'ar');
   await make(root);
   const { ui } = bundleOf(root);
   assert.deepEqual([ui.en.dir, ui.ar.dir], ['ltr', 'rtl']);
@@ -295,13 +315,11 @@ test('elevation tiles keep land heights to the metre and flatten the sea', () =>
 
 test('relief tiles go one zoom past the map, at most to zoom 15 where the source ends', () => {
   const field = [[-71.235, 42.447, -71.225, 42.452]];
-  assert.equal(terrainPlan([-72, 42, -70, 43], field).maxzoom, 12);
-  assert.equal(terrainPlan([-72, 42, -70, 43], field, 13).maxzoom, 14);
-  assert.equal(terrainPlan([-72, 42, -70, 43], field, 16).maxzoom, 15);
+  for (const [maxZoom, top] of [[undefined, 12], [13, 14], [16, 15]]) assert.equal(terrainPlan([-72, 42, -70, 43], [{ bbox: field[0], maxZoom }]).maxzoom, top);
 });
 
 test('a page that zooms in gets elevation tiles above the base zoom, the rest of the extent does not', () => {
-  const plan = terrainPlan([-25, 63, -13, 67], [[-25, 63, -13, 67], [-21.3, 64.15, -20.9, 64.35]]);
+  const plan = terrainPlan([-25, 63, -13, 67], [{ bbox: [-25, 63, -13, 67] }, { bbox: [-21.3, 64.15, -20.9, 64.35] }]);
   const zooms = Object.keys(plan.ranges).map(Number);
   assert.equal(Math.min(...zooms), 0);
   assert.ok(plan.maxzoom > BASE_ZOOM + 1, `maxzoom ${plan.maxzoom}`);
@@ -316,7 +334,7 @@ test('a page that zooms in gets elevation tiles above the base zoom, the rest of
 test('a page camera reaches the map, and a second build reads the tiles from the cache', async () => {
   const root = copy();
   await make(root);
-  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [null, null, { pitch: 55, bearing: 40, exaggeration: 2 }, null]);
+  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [null, null, { pitch: 55, bearing: 40, exaggeration: 2 }, null, null]);
   const before = fetched;
   await make(root);
   assert.equal(fetched, before);
@@ -327,17 +345,18 @@ test('a page camera reaches the map, and a second build reads the tiles from the
 test('names, citations and credits show in the source language until a catalogue translates them', async () => {
   const { i18n } = await import('../src/index.mjs');
   const root = copy();
-  edit(root, `${STORY}/story.yaml`, 'languages: [en]', 'languages: [en, tr]');
-  for (const f of fs.readdirSync(path.join(root, STORY, 'pages'), { recursive: true })) if (f.endsWith('en.md')) fs.copyFileSync(path.join(root, STORY, 'pages', f), path.join(root, STORY, 'pages', f.replace(/en\.md$/, 'tr.md')));
-  fs.writeFileSync(path.join(root, STORY, 'shared/battles.yaml'), 'skirmish:\n  lnglat: [-21.9, 64.1]\n  name: A skirmish\n  date: "900"\n  sides: [{ name: Settlers, commanders: [Ingólfr Arnarson] }]\n');
-  append(root, `${STORY}/pages/010-landnam/page.yaml`, 'battle: skirmish');
+  addLanguage(root, 'tr');
+  skirmish(root, '{ name: Settlers, commanders: [Ingólfr Arnarson] }');
+  append(root, `${STORY}/pages/010-landnam/page.yaml`, 'battle: skirmish-900');
   i18n({ root, lang: 'tr', log: quiet });
-  const cat = path.join(root, STORY, 'i18n/tr.yaml'), text = fs.readFileSync(cat, 'utf8');
-  assert.doesNotMatch(text, /markers\.reykjavik\.label|commanders\.0/);
+  const cat = path.join(root, STORY, 'i18n/tr.yaml'), text = fs.readFileSync(cat, 'utf8'), battleCat = `${STORY}/shared/battles/skirmish-900/i18n/tr.yaml`;
+  assert.doesNotMatch(text, /markers\.reykjavik\.label/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, battleCat), 'utf8'), /commanders\.0/);
   fs.writeFileSync(cat, text.replace(/: ""$/gm, ': "x"') + '\nmarkers.thingvellir.label: "Thingvellir"\n');
+  fillCatalogue(root, battleCat); fillCatalogue(root, `${BATTLE}/i18n/tr.yaml`);
   await make(root, { strict: true });
   const b = bundleOf(root);
-  assert.equal(b.battles.skirmish.sides[0].commanders[0].tr, 'Ingólfr Arnarson');
+  assert.equal(b.battles['skirmish-900'].sides[0].commanders[0].tr, 'Ingólfr Arnarson');
   assert.equal(b.markers.reykjavik.label.tr, 'Reykjavík');
   assert.equal(b.markers.thingvellir.label.tr, 'Thingvellir');
   // regenerating keeps the one name with its own form, at the end
@@ -406,9 +425,9 @@ function trilingual() {
   edit(root, 'site.yaml', 'languages: [en]', 'languages: [en, tr, de]');
   append(root, 'site.yaml', 'url: https://example.org/atlas');
   edit(root, `${STORY}/story.yaml`, 'languages: [en]', 'languages: [en, tr]');
-  for (const d of fs.readdirSync(path.join(root, STORY, 'pages'))) {
-    const text = path.join(root, STORY, 'pages', d, 'text');
-    fs.writeFileSync(path.join(text, 'tr.md'), fs.readFileSync(path.join(text, 'en.md'), 'utf8') + `\nTürkçe metin ${d}.\n`);
+  for (const pages of [path.join(root, STORY, 'pages'), path.join(root, BATTLE, 'pages')]) for (const d of fs.readdirSync(pages)) {
+    const text = path.join(pages, d, 'text');
+    if (fs.existsSync(text)) fs.writeFileSync(path.join(text, 'tr.md'), fs.readFileSync(path.join(text, 'en.md'), 'utf8') + `\nTürkçe metin ${d}.\n`);
   }
   return root;
 }
@@ -419,7 +438,7 @@ const fileFor = url => url.replace('https://example.org/atlas/', '').replace(/\/
 test('every page gets a URL per language: main pages, story overviews and steps', async () => {
   const root = trilingual();
   await make(root);
-  const story = 'settlement-of-iceland', steps = ['landnam', 'althing', 'kristnitaka', 'althing-battle'];
+  const story = 'settlement-of-iceland', steps = ['landnam', 'althing', 'kristnitaka', 'althing-1012-assembly', 'althing-1012-fight'];
   for (const l of ['en', 'tr', 'de']) assert.ok(fs.existsSync(path.join(root, 'dist', l, 'index.html')), `main page ${l}`);
   for (const l of ['en', 'tr']) {
     const overview = read(root, `${story}/${l}/index.html`);
@@ -460,7 +479,7 @@ test('with a site URL each page names itself, its language versions and a short 
   const locs = xml => [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
   const index = locs(read(root, 'sitemap.xml'));
   const urls = index.flatMap(u => locs(read(root, u.replace('https://example.org/atlas/', ''))));
-  assert.equal(urls.length, 3 + (1 + 4) * 2);
+  assert.equal(urls.length, 3 + (1 + 5) * 2);
   for (const u of urls) assert.ok(fs.existsSync(path.join(root, 'dist', fileFor(u))), u);
   const llms = read(root, 'llms.txt');
   assert.ok(llms.startsWith('# Example histories\n'));
@@ -501,15 +520,14 @@ test('a description stops at the last sentence that fits, else at a space with a
 });
 
 // --- the battle-plan emblem harita ships ---
-const PLAN = `${STORY}/pages/040-althing-battle/page.yaml`;
-const plan = root => bundleOf(root).pages.find(p => p.id === 'althing-battle');
+const plan = root => bundleOf(root).pages.find(p => p.id === 'althing-1012-fight');
 
 test('a story draws a battle plan with the emblem harita ships, and its own file replaces it', async () => {
   const root = copy();
   await make(root);
   const p = plan(root), colours = p.emblem.features.filter(f => !f.properties.hit).map(f => f.properties.family ?? f.properties.color);
-  // the allies' side is the story's family, the burners a hex colour, the river and the clash the built-in colours
-  assert.ok(colours.includes('settled') && colours.includes('#6d4c8f') && colours.includes('#5b9bd5') && colours.includes('#f4c542'));
+  // the allies' side is the battle's family, the burners a hex colour, the river and the clash the built-in colours
+  assert.ok(colours.includes('althing-1012_settled') && colours.includes('#6d4c8f') && colours.includes('#5b9bd5') && colours.includes('#f4c542'));
   assert.equal(p.emblemNames.allies.en, 'Ásgrímr Elliða-Grímsson, Kári Sölmundarson and their allies');
   fs.writeFileSync(path.join(root, 'plugins/emblems/battle-plan.mjs'), "export default () => ({ type: 'FeatureCollection', features: [] });\n");
   await make(root);
@@ -545,9 +563,9 @@ test('every arrow style draws closed rings on a casing each', async () => {
 test('an unknown side or unit type in a battle plan fails, naming the page and the unit', async () => {
   const root = copy();
   edit(root, PLAN, 'side: "#6d4c8f"', 'side: vikings');
-  await assert.rejects(make(root), /040-althing-battle\/page\.yaml emblem: battle-plan: unknown side "vikings", use a family of the story \(settled\), neutral or a hex colour/);
+  await assert.rejects(make(root), /althing-1012\/pages\/020-fight\/page\.yaml emblem: battle-plan: unknown side "vikings", use a family \(settled\), neutral or a hex colour/);
   edit(root, PLAN, 'side: vikings, type: infantry', 'side: neutral, type: berserkers');
-  await assert.rejects(make(root), /040-althing-battle\/page\.yaml emblem:\n {2}units\.0\.type: /);
+  await assert.rejects(make(root), /020-fight\/page\.yaml emblem:\n {2}units\.0\.type: /);
 });
 
 test('a trench zigzags across its line, a wall keeps to it', async () => {
@@ -567,8 +585,8 @@ test('check reports every problem in a story, and page ids limit it to those pag
   assert.equal(all.length, 3, all.join('\n'));
   assert.match(all[0], /020-althing\/page\.yaml: unknown marker "hof"/);
   assert.match(all[1], /020-althing: text\/en\.md is missing/);
-  assert.match(all[2], /040-althing-battle\/page\.yaml emblem: battle-plan: unknown side "vikings"/);
-  assert.equal(check({ root, story, pages: ['althing-battle'], log: quiet }).length, 1);
+  assert.match(all[2], /020-fight\/page\.yaml emblem: battle-plan: unknown side "vikings"/);
+  assert.equal(check({ root, story, pages: ['althing-1012-fight'], log: quiet }).length, 1);
   assert.deepEqual(check({ root, story, pages: ['landnam'], log: quiet }), []);
   assert.deepEqual(check({ root, story, pages: ['nowhere'], log: quiet }), ['content/settlement-of-iceland/pages: no page "nowhere"']);
 });
@@ -586,4 +604,294 @@ test('story builds one story into a site of its own, and out writes it elsewhere
   assert.deepEqual(JSON.parse(site.match(/const SITE = (.*);\n/)[1]).stories.map(s => s.id), ['second-story']);
   i18n({ root, lang: 'tr', story: 'second-story', log: quiet });
   assert.ok(fs.existsSync(path.join(root, 'content/second-story/i18n/tr.yaml')) && !fs.existsSync(path.join(root, 'dist')));
+});
+
+// --- battle folders: a battle's card, pages and catalogues, shared by the stories that include it ---
+test('a shared battle builds in every story that includes it, and harita i18n writes its catalogue once', async () => {
+  const root = copy();
+  fs.cpSync(path.join(root, STORY), path.join(root, 'content/second-story'), { recursive: true });
+  edit(root, 'content/second-story/story.yaml', 'id: settlement-of-iceland', 'id: second-story');
+  addLanguage(root, 'tr'); addLanguage(root, 'tr', 'content/second-story');
+  fs.writeFileSync(path.join(root, BATTLE, 'markers.yaml'), 'lawrock:\n  lnglat: [-21.118, 64.259]\n  icon: landmark\n  label: Lögberg\n');
+  append(root, PLAN, 'markers: [lawrock]');
+  const lines = [];
+  i18n({ root, lang: 'tr', log: l => lines.push(l) });
+  assert.deepEqual(lines.filter(l => l.includes('althing-1012')), [`wrote ${BATTLE}/i18n/tr.yaml: 0 of 12 strings translated`]);
+  await make(root);
+  for (const id of ['settlement-of-iceland', 'second-story']) {
+    const B = bundleOf(root, id), fight = B.pages.find(p => p.id === 'althing-1012-fight');
+    // the include's story marker first, then the battle's own under the battle's id
+    assert.deepEqual(fight.markers, ['thingvellir', 'althing-1012/lawrock']);
+    assert.equal(B.markers['althing-1012/lawrock'].label.en, 'Lögberg');
+    assert.equal(B.tree.at(-1).title.en, 'Fight at the Althing');
+  }
+});
+
+test("check reports a battle's page problems beside a problem in its battle.yaml", () => {
+  const root = copy();
+  edit(root, `${BATTLE}/battle.yaml`, 'color: settled', 'color: allies');
+  fs.rmSync(path.join(root, BATTLE, 'pages/020-fight/text/en.md'));
+  const problems = check({ root, story: 'settlement-of-iceland', log: quiet });
+  assert.equal(problems.length, 2, problems.join('\n'));
+  assert.match(problems[0], /battle\.yaml: side 2 uses "allies"/);
+  assert.match(problems[1], /020-fight: text\/en\.md is missing/);
+});
+
+test("a battle the story only names keeps its pages' texts and images out of the story", async () => {
+  const root = copy();
+  fs.rmSync(path.join(root, STORY, 'pages/040-althing-battle'), { recursive: true });
+  // a story page with the id the battle's page has in a story that includes it
+  fs.cpSync(path.join(root, STORY, 'pages/030-kristnitaka'), path.join(root, STORY, 'pages/040-althing-1012-fight'), { recursive: true });
+  append(root, `${STORY}/pages/040-althing-1012-fight/page.yaml`, 'battle: althing-1012');
+  const river = image({ root, file: svgFile(root, 'oxara'), name: 'oxara', caption: 'The river', log: quiet });
+  append(root, `${BATTLE}/pages/020-fight/text/en.md`, `@image ${river}`);
+  await make(root);
+  const B = bundleOf(root);
+  assert.equal(B.pages.at(-1).id, 'althing-1012-fight');
+  assert.doesNotMatch(read(root, 'settlement-of-iceland/en.md'), /Fighting broke out on the assembly plain/);
+  assert.ok(!B.images[river] && !fs.existsSync(path.join(root, `dist/images/${river}.svg`)));
+});
+
+test('harita image writes the caption language of the story it is for', () => {
+  const root = copy(), svg = path.join(root, 'picture.svg');
+  fs.writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  edit(root, `${STORY}/story.yaml`, 'default_language: en', 'default_language: is');
+  const id = image({ root, file: svg, name: 'farm', caption: 'Bærinn', story: 'settlement-of-iceland', log: quiet });
+  assert.match(fs.readFileSync(path.join(root, STORY, `shared/images/${id}/image.yaml`), 'utf8'), /^caption: Bærinn\ndefault_language: is\nsha256: [0-9a-f]{64}\n$/);
+});
+
+test('a story page that names a battle shows its card alone, and the catalogue keeps the battle pages', async () => {
+  const root = copy();
+  fs.rmSync(path.join(root, STORY, 'pages/040-althing-battle'), { recursive: true });
+  append(root, `${STORY}/pages/030-kristnitaka/page.yaml`, 'battle: althing-1012');
+  addLanguage(root, 'tr');
+  await make(root);
+  const B = bundleOf(root);
+  assert.deepEqual(B.pages.map(p => [p.id, p.battle]), [['landnam', null], ['althing', null], ['kristnitaka', 'althing-1012']]);
+  assert.equal(B.battles['althing-1012'].name.en, 'Fight at the Althing');
+  i18n({ root, lang: 'tr', log: quiet });
+  assert.match(fs.readFileSync(path.join(root, BATTLE, 'i18n/tr.yaml'), 'utf8'), /^pages\.fight\.title: ""$/m);
+});
+
+test('a battle placed out of date order names its include folder', async () => {
+  const root = copy();
+  fs.renameSync(path.join(root, STORY, 'pages/040-althing-battle'), path.join(root, STORY, 'pages/025-althing-battle'));
+  await assert.rejects(make(root), /030-kristnitaka starts 1000-01-01, before content\/shared\/battles\/althing-1012\/pages\/020-fight which starts 1012-01-01; renumber content\/settlement-of-iceland\/pages\/025-althing-battle to move the battle/);
+});
+
+test('a battle colour takes the story family of its id or alias, else its own with a warning', async () => {
+  const root = copy();
+  edit(root, `${STORY}/story.yaml`, 'settled: { priority: 0, color: "#2f6a9f"', 'settled: { priority: 0, color: "#123456"');
+  await make(root);
+  assert.deepEqual(bundleOf(root).families['althing-1012_settled'], { color: '#123456', color_dark: '#6fa3d6' });
+  for (const f of [`${BATTLE}/battle.yaml`, PLAN]) edit(root, f, /\bsettled\b/g, 'kin');
+  edit(root, `${STORY}/story.yaml`, 'color_dark: "#6fa3d6" }', 'color_dark: "#6fa3d6", aliases: [kin] }');
+  const aliased = [];
+  await make(root, { log: l => aliased.push(l) });
+  assert.equal(bundleOf(root).families['althing-1012_kin'].color, '#123456');
+  assert.ok(!aliased.some(l => l.includes('warning: battle')));
+  edit(root, `${STORY}/story.yaml`, ', aliases: [kin]', '');
+  const own = [];
+  await make(root, { log: l => own.push(l) });
+  const B = bundleOf(root);
+  assert.equal(B.families['althing-1012_kin'].color, '#2f6a9f');
+  assert.ok(own.includes(`  warning: battle "althing-1012" draws "kin" in its own colour, give a family in ${STORY}/story.yaml the id or alias "kin" to use the story's`));
+  // the card's side and the plan's units carry the battle's family, which the page's colours define per theme
+  assert.equal(B.battles['althing-1012'].sides[1].color, 'althing-1012_kin');
+  assert.ok(plan(root).emblem.features.some(f => f.properties.family === 'althing-1012_kin'));
+  assert.ok(read(root, 'settlement-of-iceland/en/landnam/index.html').includes('--z-althing-1012_kin:#2f6a9f;'));
+});
+
+test("a story's own image stays in its folder and a shared battle's goes to dist/images/, in the export and og:image too", async () => {
+  const root = copy();
+  append(root, 'site.yaml', 'url: https://example.org/atlas');
+  const own = image({ root, file: svgFile(root, 'farm'), name: 'farm', caption: 'The story picture', story: 'settlement-of-iceland', log: quiet });
+  const plain = image({ root, file: svgFile(root, 'plain'), name: 'plain', caption: 'The battle picture', log: quiet });
+  append(root, `${STORY}/pages/010-landnam/text/en.md`, `@image ${own}`);
+  append(root, `${BATTLE}/pages/010-assembly/text/en.md`, `@image ${plain}`);
+  append(root, `${BATTLE}/battle.yaml`, `images: [${plain}]`);
+  await make(root);
+  const B = bundleOf(root), site = 'https://example.org/atlas/';
+  assert.deepEqual([B.images[own].src, B.images[plain].src], [`images/${own}.svg`, `../images/${plain}.svg`]);
+  assert.deepEqual(B.battles['althing-1012'].images, [plain]);
+  for (const f of [`settlement-of-iceland/images/${own}.svg`, `images/${plain}.svg`]) assert.ok(fs.existsSync(path.join(root, 'dist', f)), f);
+  assert.ok(B.pages[3].html.en.includes(`data-img="${plain}"`));
+  const md = read(root, 'settlement-of-iceland/en.md');
+  assert.ok(md.includes(`![The story picture](${site}settlement-of-iceland/images/${own}.svg)`) && md.includes(`![The battle picture](${site}images/${plain}.svg)`));
+  assert.ok(read(root, 'settlement-of-iceland/en/althing-1012-assembly/index.html').includes(`<meta property="og:image" content="${site}images/${plain}.svg">`));
+});
+
+test('harita image makes an image folder that texts, markers and battle cards share, and dist/ gets the ones in use', async () => {
+  const root = copy();
+  const own = image({ root, file: svgFile(root, 'farm'), name: 'farm', caption: 'The farm', credit: 'A museum', story: 'settlement-of-iceland', log: quiet });
+  const shared = image({ root, file: svgFile(root, 'plain'), name: 'plain', caption: 'The assembly plain', log: quiet });
+  const unused = image({ root, file: svgFile(root, 'unused'), name: 'unused', caption: 'Nobody shows this', log: quiet });
+  assert.match(own, /^farm-[0-9a-f]{6}$/);
+  assert.ok(fs.existsSync(path.join(root, STORY, `shared/images/${own}/image.svg`)) && fs.existsSync(path.join(root, `content/shared/images/${shared}/image.yaml`)));
+  append(root, `${STORY}/pages/010-landnam/text/en.md`, `@image ${own}`);
+  edit(root, `${STORY}/shared/markers.yaml`, 'icon: house', `icon: house\n  image: ${own}`);
+  append(root, `${BATTLE}/battle.yaml`, `images: [${shared}]`);
+  append(root, `${BATTLE}/pages/020-fight/text/en.md`, `@image ${shared}`);
+  addLanguage(root, 'tr');
+  const lines = [];
+  await make(root, { log: l => lines.push(l) });
+  const B = bundleOf(root);
+  assert.deepEqual(B.images[own], { id: own, src: `images/${own}.svg`, caption: { en: 'The farm', tr: 'The farm' }, credit: { en: 'A museum', tr: 'A museum' } });
+  assert.equal(B.markers.reykjavik.image, own);
+  assert.deepEqual(B.battles['althing-1012'].images, [shared]);
+  assert.ok(fs.existsSync(path.join(root, `dist/settlement-of-iceland/images/${own}.svg`)) && fs.existsSync(path.join(root, `dist/images/${shared}.svg`)));
+  assert.ok(!B.images[unused] && !fs.existsSync(path.join(root, `dist/images/${unused}.svg`)));
+  assert.ok(lines.includes('  image folders tr: 0 of 2 strings translated, 2 missing (harita i18n tr)'));
+  i18n({ root, lang: 'tr', log: quiet });
+  assert.match(fs.readFileSync(path.join(root, STORY, `shared/images/${own}/i18n/tr.yaml`), 'utf8'), /^# The farm\nimage\.caption: ""$/m);
+});
+
+test('a shared image ships once in dist/images/ for every story that shows it, and goes when none does', async () => {
+  const root = copy(), svg = path.join(root, 'picture.svg');
+  fs.writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>');
+  fs.cpSync(path.join(root, STORY), path.join(root, 'content/second-story'), { recursive: true });
+  edit(root, 'content/second-story/story.yaml', 'id: settlement-of-iceland', 'id: second-story');
+  const id = image({ root, file: svg, name: 'plain', caption: 'The assembly plain', log: quiet });
+  for (const s of [STORY, 'content/second-story']) append(root, `${s}/pages/010-landnam/text/en.md`, `@image ${id}`);
+  await make(root);
+  const shipped = f => fs.readdirSync(path.join(root, 'dist'), { recursive: true }).filter(x => x.endsWith(f));
+  assert.deepEqual(shipped(`${id}.svg`), [`images/${id}.svg`]);
+  for (const s of ['settlement-of-iceland', 'second-story']) assert.equal(bundleOf(root, s).images[id].src, `../images/${id}.svg`);
+  for (const s of [STORY, 'content/second-story']) edit(root, `${s}/pages/010-landnam/text/en.md`, `@image ${id}`, '');
+  await make(root);
+  assert.deepEqual(shipped(`${id}.svg`), []);
+});
+
+test('harita image finds the image the content holds by its source or its bytes before it makes a folder', () => {
+  const root = copy(), file = svgFile(root, 'farm'), page = 'https://commons.wikimedia.org/wiki/File:Reykjav%C3%ADk%20farm.jpg';
+  const first = image({ root, file, name: 'farm', caption: 'The farm', source: page, story: 'settlement-of-iceland', log: quiet });
+  const meta = fs.readFileSync(path.join(root, STORY, `shared/images/${first}/image.yaml`), 'utf8');
+  assert.match(meta, new RegExp(`^source: ${page.replace(/[.?]/g, '\\$&')}\nsha256: [0-9a-f]{64}\n$`, 'm'));
+  // the same Commons page, written as Commons writes it, over another download of it
+  assert.equal(image({ root, file: svgFile(root, 'other'), name: 'farm', caption: 'x', source: 'https://commons.wikimedia.org/wiki/File:Reykjavík_farm.jpg', story: 'settlement-of-iceland', log: quiet }), first);
+  // the same bytes without a source, from a second story: the folder moves where both stories see it
+  fs.cpSync(path.join(root, STORY), path.join(root, 'content/second-story'), { recursive: true });
+  fs.rmSync(path.join(root, 'content/second-story/shared/images'), { recursive: true });
+  edit(root, 'content/second-story/story.yaml', 'id: settlement-of-iceland', 'id: second-story');
+  const lines = [];
+  assert.equal(image({ root, file, name: 'farm', caption: 'x', story: 'second-story', log: l => lines.push(l) }), first);
+  assert.ok(fs.existsSync(path.join(root, `content/shared/images/${first}/image.svg`)) && !fs.existsSync(path.join(root, STORY, `shared/images/${first}`)));
+  assert.deepEqual(lines, [`moved ${STORY}/shared/images/${first}/ to content/shared/images/${first}/, it holds the same file`, `name it as ${first}`]);
+  assert.deepEqual(fs.readdirSync(path.join(root, 'content/shared/images')), [first]);
+});
+
+test('a strict build holds each image to its sha256, and harita rehash writes it', async () => {
+  const root = copy(), id = image({ root, file: svgFile(root, 'farm'), name: 'farm', caption: 'The farm', story: 'settlement-of-iceland', log: quiet });
+  const folder = path.join(root, STORY, `shared/images/${id}`);
+  append(root, `${STORY}/pages/010-landnam/text/en.md`, `@image ${id}`);
+  await make(root, { strict: true });
+  fs.writeFileSync(path.join(folder, 'image.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><title>new</title></svg>');
+  await assert.rejects(make(root, { strict: true }), new RegExp(`${id}/image\\.yaml: image\\.svg changed after its sha256 was written, harita rehash writes the new one`));
+  await make(root);
+  edit(root, `${STORY}/shared/images/${id}/image.yaml`, /^sha256:.*\n/m, '');
+  await assert.rejects(make(root, { strict: true }), /image\.yaml: no sha256, harita rehash writes it/);
+  assert.deepEqual(rehash({ root, log: quiet }), [`${STORY}/shared/images/${id}`]);
+  await make(root, { strict: true });
+  assert.deepEqual(rehash({ root, log: quiet }), []);
+});
+
+test("a story's cover can name an image, and the image ships once", async () => {
+  const root = copy(), svg = path.join(root, 'picture.svg');
+  fs.writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>');
+  const id = image({ root, file: svg, name: 'farm', caption: 'The farm', story: 'settlement-of-iceland', log: quiet });
+  append(root, `${STORY}/story.yaml`, `cover: ${id}`);
+  append(root, 'site.yaml', 'url: https://example.org/atlas');
+  const r = await make(root);
+  assert.equal(r.stories[0].cover, `images/${id}.svg`);
+  assert.ok(fs.existsSync(path.join(root, `dist/settlement-of-iceland/images/${id}.svg`)) && !fs.existsSync(path.join(root, 'dist/settlement-of-iceland/cover.svg')));
+  assert.ok(read(root, 'settlement-of-iceland/en/index.html').includes(`<meta property="og:image" content="https://example.org/atlas/settlement-of-iceland/images/${id}.svg">`));
+  edit(root, `${STORY}/story.yaml`, `cover: ${id}`, 'cover: nowhere-a1b2c3');
+  await assert.rejects(make(root), /story\.yaml cover: unknown image "nowhere-a1b2c3"/);
+});
+
+test('an image folder used the wrong way stops the build, naming the folder', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+  const folder = (root, dir, files) => { fs.mkdirSync(path.join(root, dir), { recursive: true }); for (const [f, t] of Object.entries(files)) fs.writeFileSync(path.join(root, dir, f), t); };
+  const use = (root, id) => append(root, `${STORY}/pages/010-landnam/text/en.md`, `@image ${id}`);
+  const cases = [
+    [root => { folder(root, 'content/shared/images/farm', { 'image.svg': svg, 'image.yaml': 'caption: A farm\n' }); use(root, 'farm'); }, /content\/shared\/images\/farm: an image folder is named <name>-<six hex digits>/],
+    [root => { folder(root, 'content/shared/images/farm-a1b2c3', { 'image.svg': svg }); use(root, 'farm-a1b2c3'); }, /farm-a1b2c3: image\.yaml is missing/],
+    [root => { folder(root, 'content/shared/images/farm-a1b2c3', { 'image.svg': svg, 'image.png': '', 'image.yaml': 'caption: A farm\n' }); use(root, 'farm-a1b2c3'); }, /farm-a1b2c3: keep one image file of image\.png, image\.svg/],
+    [root => { for (const d of ['content/shared/images/farm-a1b2c3', `${STORY}/shared/images/farm-a1b2c3`]) folder(root, d, { 'image.svg': svg, 'image.yaml': 'caption: A farm\n' }); use(root, 'farm-a1b2c3'); },
+      /010-landnam\/text\/en\.md: image "farm-a1b2c3" is in content\/settlement-of-iceland\/shared\/images\/farm-a1b2c3 and content\/shared\/images\/farm-a1b2c3, keep one/],
+    // every image is an image folder
+    [root => append(root, `${STORY}/pages/010-landnam/page.yaml`, 'images:\n  farm: { file: farm.svg, caption: A farm }'), /010-landnam\/page\.yaml:\n  images: images live in image folders, content\/<story>\/shared\/images\/<name>-<six hex digits>\/, and harita image <file> <name> makes one/],
+    [root => fs.writeFileSync(path.join(root, STORY, 'shared/images.yaml'), 'farm: { file: farm.svg, caption: A farm }\n'), /shared\/images\.yaml: images live in image folders/],
+    [root => append(root, `${STORY}/story.yaml`, 'cover: cover.jpg'), /story\.yaml:\n  cover: the id of an image folder the story can show, harita image <file> <name> --story <story> makes one/],
+    [root => { folder(root, 'content/shared/images/farm-a1b2c3', { 'image.svg': svg, 'image.yaml': 'caption: A farm\n' }); use(root, '../images/farm-a1b2c3'); }, /010-landnam\/text\/en\.md: unknown image "\.\.\/images\/farm-a1b2c3", an image id is lowercase letters, digits and dashes/],
+    // a shared battle sees the shared image folders alone, so it works in any story
+    [root => { folder(root, `${STORY}/shared/images/farm-a1b2c3`, { 'image.svg': svg, 'image.yaml': 'caption: A farm\n' }); append(root, `${BATTLE}/battle.yaml`, 'images: [farm-a1b2c3]'); }, /althing-1012\/battle\.yaml: unknown image "farm-a1b2c3"/],
+  ];
+  for (const [breakIt, message] of cases) {
+    const root = copy();
+    breakIt(root);
+    await assert.rejects(make(root), message);
+  }
+});
+
+test("a battle page without the story's language shows the battle's text with a warning, and --strict stops on it", async () => {
+  const root = copy();
+  edit(root, `${STORY}/story.yaml`, 'languages: [en]', 'languages: [en, tr]');
+  for (const f of fs.readdirSync(path.join(root, STORY, 'pages'), { recursive: true })) if (f.endsWith('en.md')) fs.copyFileSync(path.join(root, STORY, 'pages', f), path.join(root, STORY, 'pages', f.replace(/en\.md$/, 'tr.md')));
+  const lines = [];
+  await make(root, { log: l => lines.push(l) });
+  assert.ok(lines.includes('  warning: battle "althing-1012" has no tr text on althing-1012-assembly, althing-1012-fight, they show the en text'));
+  assert.ok(bundleOf(root).pages[3].html.tr.startsWith('<div lang="en" dir="ltr"><p>At the Althing of 1012'));
+  i18n({ root, lang: 'tr', log: quiet });
+  fillCatalogue(root, `${STORY}/i18n/tr.yaml`); fillCatalogue(root, `${BATTLE}/i18n/tr.yaml`);
+  await assert.rejects(make(root, { strict: true }), /content\/shared\/battles\/althing-1012: tr: no text\/tr\.md on althing-1012-assembly, althing-1012-fight/);
+});
+
+test("patterns counts the zones an include shows on a battle's pages", () => {
+  const root = copy();
+  edit(root, `${STORY}/story.yaml`, 'smoothing: 4', '  church: { priority: 1, color: "#2f6aa0", color_dark: "#6fa3d7" }\nsmoothing: 4');
+  fs.mkdirSync(path.join(root, STORY, 'shared/zones'));
+  fs.writeFileSync(path.join(root, STORY, 'shared/zones/church.geojson'), JSON.stringify({
+    type: 'Feature', properties: { family: 'church', name: 'Church land' },
+    geometry: { type: 'Polygon', coordinates: [[[-22, 64], [-21, 64], [-21, 64.5], [-22, 64.5], [-22, 64]]] },
+  }));
+  append(root, INCLUDE, 'zones: [island, church]');
+  const found = patterns({ root, log: quiet });
+  assert.deepEqual(found.map(f => [f.a, f.b, f.dir]), [['church', 'settled', `${STORY}/pages/040-althing-battle`]]);
+});
+
+test('a battle folder or an include used the wrong way stops the build, naming the file', async () => {
+  const write = (root, file, text) => { fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true }); fs.writeFileSync(path.join(root, file), text); };
+  const cases = [
+    [root => write(root, `${STORY}/shared/battles.yaml`, 'x: {}\n'), /settlement-of-iceland\/shared\/battles\.yaml: battles live in folders now, one per battle/],
+    [root => fs.copyFileSync(path.join(root, STORY, 'story.yaml'), path.join(root, 'content/shared/story.yaml')), /content\/shared\/story\.yaml: content\/shared\/ holds the battles stories share/],
+    [root => edit(root, INCLUDE, 'battle: althing-1012', 'battle: althing-1013'), /040-althing-battle\/include\.yaml: unknown battle "althing-1013", add content\/settlement-of-iceland\/shared\/battles\/althing-1013\/battle\.yaml or content\/shared\/battles\/althing-1013\/battle\.yaml/],
+    [root => append(root, `${STORY}/pages/010-landnam/page.yaml`, 'battle: nowhere-900'), /010-landnam\/page\.yaml: unknown battle "nowhere-900"/],
+    [root => fs.cpSync(path.join(root, BATTLE), path.join(root, STORY, 'shared/battles/althing-1012'), { recursive: true }), /battle "althing-1012" is in both content\/settlement-of-iceland\/shared\/battles\/althing-1012 and content\/shared\/battles\/althing-1012, keep one/],
+    [root => { write(root, `${STORY}/pages/040-althing-battle/.DS_Store`, ''); write(root, `${STORY}/pages/040-althing-battle/notes.md`, 'x'); }, /040-althing-battle: an include folder holds include\.yaml alone, move notes\.md into/],
+    [root => fs.cpSync(path.join(root, STORY, 'pages/040-althing-battle'), path.join(root, STORY, 'pages/050-again'), { recursive: true }), /050-again\/include\.yaml: battle "althing-1012" is included twice/],
+    [root => write(root, `${BATTLE}/pages/030-more/include.yaml`, 'battle: althing-1012\n'), /030-more\/include\.yaml: a battle includes no other battle/],
+    [root => { skirmish(root); write(root, `${STORY}/pages/050-skirmish/include.yaml`, 'battle: skirmish-900\n'); }, /050-skirmish\/include\.yaml: battle "skirmish-900" has no pages to include, a page that writes battle: skirmish-900 shows its card/],
+    [root => append(root, INCLUDE, 'zones: [mainland]'), /040-althing-battle\/include\.yaml: unknown zone "mainland"/],
+    [root => edit(root, INCLUDE, 'markers: [thingvellir]', 'markers: [hof]'), /040-althing-battle\/include\.yaml: unknown marker "hof"/],
+    [root => append(root, PLAN, 'zones: [island]'), /020-fight\/page\.yaml: a battle page has no zones/],
+    [root => write(root, `${BATTLE}/zones/field.geojson`, '{}'), /althing-1012\/zones: a battle holds no zones/],
+    [root => append(root, `${STORY}/pages/010-landnam/page.yaml`, 'battle: true'), /010-landnam\/page\.yaml: battle: true opens the card on a battle's own page/],
+    [root => edit(root, `${BATTLE}/pages/010-assembly/page.yaml`, 'battle: true', 'battle: althing-1012'), /010-assembly\/page\.yaml: a battle page opens its own card with battle: true/],
+    [root => edit(root, `${STORY}/story.yaml`, 'smoothing: 4', '  held: { priority: 1, color: "#c62828", aliases: [settled] }\nsmoothing: 4'), /story\.yaml: family "held" has the alias "settled", which is the id of another family/],
+    [root => edit(root, `${STORY}/story.yaml`, 'smoothing: 4', '  a1: { priority: 1, color: "#c62828", aliases: [kin] }\n  a2: { priority: 1, color: "#c62828", aliases: [kin] }\nsmoothing: 4'), /the alias "kin" is on both "a1" and "a2", keep it on one/],
+    [root => edit(root, `${BATTLE}/battle.yaml`, 'color: settled', 'color: allies'), /althing-1012\/battle\.yaml: side 2 uses "allies", which is not in the battle's families/],
+    [root => write(root, `${BATTLE}/markers.yaml`, 'camp:\n  lnglat: [-21.12, 64.26]\n  label: Camp\n  color: allies\n'), /althing-1012\/markers\.yaml: marker "camp" uses unknown family "allies", add it to families in battle\.yaml/],
+    [root => append(root, PLAN, 'markers: [camp]'), /020-fight\/page\.yaml: unknown marker "camp"/],
+    [root => write(root, 'content/shared/battles.yaml', 'x: {}\n'), /content\/shared\/battles\.yaml: battles live in folders now/],
+    [root => fs.copyFileSync(path.join(root, `${BATTLE}/pages/010-assembly/page.yaml`), path.join(root, STORY, 'pages/040-althing-battle/page.yaml')), /040-althing-battle: holds page\.yaml and include\.yaml, keep one/],
+    [root => fs.renameSync(path.join(root, BATTLE), path.join(root, 'content/shared/battles/Althing-1012')), /content\/shared\/battles\/Althing-1012: a battle folder is named in lowercase letters/],
+    [root => { fs.rmSync(path.join(root, BATTLE, 'pages'), { recursive: true }); fs.mkdirSync(path.join(root, BATTLE, 'pages/010-notes'), { recursive: true }); }, /include\.yaml: battle "althing-1012" has no pages to include/],
+    [root => write(root, `${BATTLE}/pages/010-assembly/zones/field.geojson`, '{}'), /010-assembly\/zones: a battle holds no zones/],
+  ];
+  for (const [breakIt, message] of cases) {
+    const root = copy();
+    breakIt(root);
+    await assert.rejects(make(root), message);
+  }
 });

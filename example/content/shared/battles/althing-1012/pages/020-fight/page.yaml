@@ -2,7 +2,6 @@ date: { en: "Summer 1012" }
 when: 1012
 title: { en: "Fighting breaks out at the Althing" }
 bbox: [-21.15, 64.248, -21.09, 64.268]
-markers: [thingvellir]
 # battle-plan ships with harita: troops, water, works and movements at one moment, sizes in metres
 emblem:
   kind: battle-plan

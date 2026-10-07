@@ -1,6 +1,7 @@
 // harita i18n <lang> [--story id]: write or refresh the translation catalogues for one language.
 // Runs the build quietly to collect every translatable string, then writes content/<story>/i18n/<lang>.yaml
-// per story and i18n/<lang>.yaml for the site, keeping translations that are already there.
+// per story, i18n/<lang>.yaml in each battle and image folder a story uses, and i18n/<lang>.yaml for the site,
+// keeping translations that are already there.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -26,6 +27,11 @@ export function i18n({ root = process.cwd(), lang, story, log = console.log } = 
   for (const [id, entries] of Object.entries(r.i18n.stories)) {
     if (story && id !== story) continue;
     write(path.join(root, 'content', id, 'i18n', lang + '.yaml'), entries, `${lang} strings for the story "${id}".`);
+  }
+  // a battle's or an image folder's catalogues sit in its folder, for each language a story that uses it has
+  for (const [dir, f] of Object.entries(r.i18n.folders)) {
+    if (lang === f.defaultLang || !f.langs.includes(lang)) continue;
+    write(path.join(root, dir, 'i18n', lang + '.yaml'), f.entries, `${lang} strings for the ${f.kind} "${f.id}".`);
   }
   if (!story) write(path.join(root, 'i18n', lang + '.yaml'), r.i18n.site, `${lang} strings for the site.`);
   if (!story && lang !== 'en') {

@@ -20,10 +20,10 @@
 // A work with style trench zigzags, the default is a straight wall.
 // `facing` is the compass bearing the unit faces. `width` runs along its front, `depth` front to back.
 // `bow` bends the front: positive pushes the centre towards the enemy, negative draws it back.
-// `side` is a family of the story, `neutral` for a grey, or a hex colour. Arrows curve through their points, dashed
-// is a retreat and fire is shooting, drawn as three thin arrows. A later arrow draws over an earlier one. Any unit,
-// arrow, work or water can carry a `name`, shown when the reader points at it. Pieces with the same name highlight
-// together. `id` sets the catalogue key, else it comes from the English name.
+// `side` is a family of the story, or of the battle on a battle's page, `neutral` for a grey, or a hex colour.
+// Arrows curve through their points, dashed is a retreat and fire is shooting, drawn as three thin arrows. A later
+// arrow draws over an earlier one. Any unit, arrow, work or water can carry a `name`, shown when the reader points at
+// it. Pieces with the same name highlight together. `id` sets the catalogue key, else it comes from the English name.
 // harita checks the parameters against BattlePlan in src/schema.mjs before drawing.
 import { buffer, polygon } from '@turf/turf';
 
@@ -37,9 +37,9 @@ export default function battlePlan(spec, { families = {} } = {}) {
   const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
   const toM = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky];
   const toLL = ([x, y]) => [+(lon0 + x / kx).toFixed(5), +(lat0 + y / ky).toFixed(5)];
-  // a side that is a family of the story takes the family's colours, light or dark with the theme
+  // a side that is a family takes the family's colours, light or dark with the theme
   const look = s => families[s] ? { family: s, color: families[s].color } : s === 'neutral' ? { color: NEUTRAL } : /^#[0-9a-f]{6}$/i.test(s)
-    ? { color: s } : fail(`unknown side "${s}", use a family of the story (${Object.keys(families).join(', ')}), neutral or a hex colour`);
+    ? { color: s } : fail(`unknown side "${s}", use a family (${Object.keys(families).join(', ')}), neutral or a hex colour`);
   const label = item => item.name == null ? {} : { id: item.id ?? slug(typeof item.name === 'string' ? item.name : item.name.en), name: item.name };
   const feats = [];
   const add = (rings, props) => { const closed = rings.filter(r => r.length >= 3).map(r => { const ll = r.map(toLL); ll.push(ll[0]); return ll; }); if (closed.length) feats.push({ type: 'Feature', properties: props, geometry: { type: 'Polygon', coordinates: closed } }); };
@@ -48,7 +48,7 @@ export default function battlePlan(spec, { families = {} } = {}) {
 
   // the build gives land the tint of its country
   for (const l of land) add([l.area.map(toM)], { land: true });
-  // a story with a `water` family colours water per theme, for stories whose sides are blue
+  // a `water` family colours water per theme, for stories and battles whose sides are blue
   const wet = families.water ? { family: 'water', color: families.water.color } : { color: WATER };
   for (const w of water) {
     if (w.area) add([w.area.map(toM)], { ...wet, ...label(w) });

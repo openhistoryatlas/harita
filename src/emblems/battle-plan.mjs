@@ -20,10 +20,12 @@
 // A work with style trench zigzags, the default is a straight wall.
 // `facing` is the compass bearing the unit faces. `width` runs along its front, `depth` front to back.
 // `bow` bends the front: positive pushes the centre towards the enemy, negative draws it back.
-// `side` is a family of the story, `neutral` for a grey, or a hex colour. Arrows curve through their points, and
-// dashed is a retreat. Any unit, arrow, work or water can carry a `name`, shown when the reader points at it. Pieces
-// with the same name highlight together. `id` sets the catalogue key, else it comes from the English name.
+// `side` is a family of the story, `neutral` for a grey, or a hex colour. Arrows curve through their points, dashed
+// is a retreat and fire is shooting, drawn as three thin arrows. A later arrow draws over an earlier one. Any unit,
+// arrow, work or water can carry a `name`, shown when the reader points at it. Pieces with the same name highlight
+// together. `id` sets the catalogue key, else it comes from the English name.
 // harita checks the parameters against BattlePlan in src/schema.mjs before drawing.
+import { buffer, polygon } from '@turf/turf';
 
 const NEUTRAL = '#8c8c8c', WATER = '#5b9bd5', CLASH = '#f4c542';
 
@@ -41,6 +43,8 @@ export default function battlePlan(spec, { families = {} } = {}) {
   const label = item => item.name == null ? {} : { id: item.id ?? slug(typeof item.name === 'string' ? item.name : item.name.en), name: item.name };
   const feats = [];
   const add = (rings, props) => { const closed = rings.filter(r => r.length >= 3).map(r => { const ll = r.map(toLL); ll.push(ll[0]); return ll; }); if (closed.length) feats.push({ type: 'Feature', properties: props, geometry: { type: 'Polygon', coordinates: closed } }); };
+  // a ring grown by pad metres on every side, with round corners
+  const addGrown = (ring, pad, props) => { const ll = ring.map(toLL); ll.push(ll[0]); const { geometry } = buffer(polygon([ll]), pad, { units: 'meters' }); feats.push({ type: 'Feature', properties: props, geometry: { type: geometry.type, coordinates: rounded(geometry.coordinates) } }); };
 
   // the build gives land the tint of its country
   for (const l of land) add([l.area.map(toM)], { land: true });
@@ -60,15 +64,20 @@ export default function battlePlan(spec, { families = {} } = {}) {
     if (u.name != null && gappy.has(u.type)) add([footprint(u, toM)], { ...look(u.side), ...label(u), hit: true });
     for (const rings of unitShapes(u, toM)) add(rings, { ...look(u.side), ...label(u) });
   }
+  // each arrow sits on a slightly larger copy in the paper colour, so where two arrows cross the later one stands apart
   for (const a of arrows) {
-    if (a.name != null && a.style === 'dashed') add([ribbon(smooth(a.path.map(toM)), a.width ?? 100, a.width ?? 100)], { ...look(a.side), ...label(a), hit: true });
-    for (const ring of arrowShapes(a, toM)) add([ring], { ...look(a.side), ...label(a) });
+    const pts = smooth(a.path.map(toM)), w = a.width ?? Math.max(40, length(pts) / 25), rings = arrowShapes(pts, w, a.style);
+    if (a.name != null && a.style === 'dashed') add([ribbon(pts, a.width ?? 100, a.width ?? 100)], { ...look(a.side), ...label(a), hit: true });
+    if (a.name != null && a.style === 'fire') add([ribbon(pts, w * 1.2, w * 4.4)], { ...look(a.side), ...label(a), hit: true });
+    for (const ring of rings) addGrown(ring, w * 0.15, { casing: true, ...label(a) });
+    for (const ring of rings) add([ring], { ...look(a.side), ...label(a) });
   }
   for (const c of clashes) add([star(toM(clashAt(c)), c.size ?? 150)], { color: CLASH });
   return { type: 'FeatureCollection', features: feats };
 }
 
 const clashAt = c => Array.isArray(c) ? c : c.at;
+const rounded = c => typeof c[0] === 'number' ? c.map(v => +v.toFixed(5)) : c.map(rounded);
 const slug = s => s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const fail = msg => { throw new Error(`battle-plan: ${msg}`); };
 
@@ -225,15 +234,27 @@ function zigzag(pts, step, amp) {
   return at.map((p, i) => i === 0 || i === n ? p : [p[0] + nm[i][0] * amp * (i % 2 ? 1 : -1), p[1] + nm[i][1] * amp * (i % 2 ? 1 : -1)]);
 }
 
-function arrowShapes(a, toM) {
-  const pts = smooth(a.path.map(toM)), L = length(pts), w = a.width ?? Math.max(40, L / 25);
-  const head = Math.min(w * 2.6, L * 0.4), shaft = cutAt(pts, L - head), base = shaft.at(-1), tip = pts.at(-1);
-  const [nx, ny] = normals(shaft).at(-1), hw = w * 1.25;
-  const headRing = [[base[0] + nx * hw, base[1] + ny * hw], tip, [base[0] - nx * hw, base[1] - ny * hw]];
-  if (a.style !== 'dashed') return [[...ribbon(shaft, w * 0.55, w).slice(0, shaft.length), ...headRing, ...ribbon(shaft, w * 0.55, w).slice(shaft.length)]];
-  const out = [headRing], dash = w * 2.2, gap = w * 1.4, Ls = length(shaft);
+// a solid arrow is one ring, a dashed one a head and dashes, fire three thin arrows that spread towards the target
+function arrowShapes(pts, w, style) {
+  if (style === 'fire') {
+    const nm = normals(pts), at = [0];
+    for (let i = 1; i < pts.length; i++) at.push(at[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    return [-1, 0, 1].map(k => arrowRing(pts.map((p, i) => { const o = k * w * 1.6 * (0.3 + 0.7 * at[i] / at.at(-1)); return [p[0] + nm[i][0] * o, p[1] + nm[i][1] * o]; }), w * 0.25, w * 0.3, w * 1.4, w * 0.6));
+  }
+  if (style !== 'dashed') return [arrowRing(pts, w * 0.55, w, w * 2.6, w * 1.25)];
+  const { shaft, head } = headOf(pts, w * 2.6, w * 1.25), out = [head], dash = w * 2.2, gap = w * 1.4, Ls = length(shaft);
   for (let s = 0; s < Ls - 1; s += dash + gap) { const piece = cutAt(shaft, Math.min(Ls, s + dash)), from = cutAt(piece, s); const seg = [from.at(-1), ...piece.slice(from.length - 1)]; if (seg.length >= 2) out.push(ribbon(seg, w * 0.8, w * 0.8)); }
   return out;
+}
+// the head at the end of pts, `len` long and 2 * hw wide, and the shaft that leads to it
+function headOf(pts, len, hw) {
+  const L = length(pts), shaft = cutAt(pts, L - Math.min(len, L * 0.4)), base = shaft.at(-1), [nx, ny] = normals(shaft).at(-1);
+  return { shaft, head: [[base[0] + nx * hw, base[1] + ny * hw], pts.at(-1), [base[0] - nx * hw, base[1] - ny * hw]] };
+}
+// one ring for an arrow along pts, its shaft widening from w0 to w1
+function arrowRing(pts, w0, w1, len, hw) {
+  const { shaft, head } = headOf(pts, len, hw), side = ribbon(shaft, w0, w1);
+  return [...side.slice(0, shaft.length), ...head, ...side.slice(shaft.length)];
 }
 
 function star([x, y], r) {

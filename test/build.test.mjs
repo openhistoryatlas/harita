@@ -233,17 +233,15 @@ test('four zones of two families meeting at a point leave no gap and do not over
   assert.ok(await covers(geoms, [x, y]), 'the junction itself is uncovered');
 });
 
-test('a battle page opens in 3D when its view is close, and camera: false keeps it flat', async () => {
+test('a battle page has no camera of its own, the story carries the default one, and camera: false asks to go', async () => {
   const root = copy(), pages = `${STORY}/pages`;
   fs.writeFileSync(path.join(root, STORY, 'shared/battles.yaml'), 'skirmish:\n  lnglat: [-21.9, 64.1]\n  name: A skirmish\n  date: "900"\n  sides: [{ name: Settlers }]\n');
   append(root, `${pages}/010-landnam/page.yaml`, 'battle: skirmish');
-  append(root, `${pages}/020-althing/page.yaml`, 'battle: skirmish');
-  edit(root, `${pages}/020-althing/page.yaml`, 'bbox: [-25, 63, -13, 67]', 'bbox: [-40, 55, -5, 70]');
   await make(root);
-  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [{ pitch: 50, bearing: 0, exaggeration: 2 }, null, { pitch: 55, bearing: 40, exaggeration: 2 }, null]);
+  assert.deepEqual(bundleOf(root).pages.map(p => p.camera), [null, null, { pitch: 55, bearing: 40, exaggeration: 2 }, null]);
+  assert.deepEqual(bundleOf(root).camera, { pitch: 50, bearing: 0, exaggeration: 2 });
   append(root, `${pages}/010-landnam/page.yaml`, 'camera: false');
-  await make(root);
-  assert.equal(bundleOf(root).pages[0].camera, null);
+  await assert.rejects(make(root), /pages open flat until the reader picks 3D, so camera: false has no use: remove it/);
 });
 
 test('a page lists its other map sources with links, in every language', async () => {
@@ -527,6 +525,19 @@ test('every unit type draws closed rings', async () => {
       assert.ok(ring.length >= 4, `${type}: a ring of ${ring.length} points`);
       assert.deepEqual(ring[0], ring.at(-1), `${type}: an open ring`);
       assert.ok(ring.flat().every(Number.isFinite), `${type}: a coordinate that is not a number`);
+    }
+  }
+});
+
+test('every arrow style draws closed rings on a casing each', async () => {
+  const { default: battlePlan } = await import('../src/emblems/battle-plan.mjs');
+  const drawn = arrow => battlePlan({ arrows: [{ side: 'neutral', path: [[10, 45], [10.01, 45.005], [10.02, 45.004]], ...arrow }] }).features;
+  for (const style of ['solid', 'dashed', 'fire']) {
+    const feats = drawn({ style }), casings = feats.filter(f => f.properties.casing);
+    assert.equal(casings.length * 2, feats.length, `${style}: a piece without its casing`);
+    for (const f of feats) for (const ring of f.geometry.type === 'Polygon' ? f.geometry.coordinates : f.geometry.coordinates.flat()) {
+      assert.deepEqual(ring[0], ring.at(-1), `${style}: an open ring`);
+      assert.ok(ring.flat().every(Number.isFinite), `${style}: a coordinate that is not a number`);
     }
   }
 });

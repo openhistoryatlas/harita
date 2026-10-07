@@ -295,8 +295,7 @@ function readContent(p, storyDir, onProblem = null) {
       });
       html[lang] = marked.parse(ordinals(md));
     });
-    // a battle page opens in 3D when its view is close enough for the relief to show
-    const camera = pg.camera === false ? null : pg.camera ?? (pg.battle && openZoom(pg.bbox) >= 6 ? Camera.parse({}) : null);
+    const camera = pg.camera ?? null;
     const sourceTexts = pg.sources.map((s, i) => T(s, `pages.${pid}.sources.${i}`, { shared: true }));
     const sources = Object.fromEntries(langs.map(l => [l, sourceTexts.map(s => s[l])]));
     const mapSourceTexts = pg.map_sources.map((s, i) => T(s.text, `pages.${pid}.map_sources.${i}`, { shared: true }));
@@ -428,7 +427,7 @@ function buildStory(p, storyDir, site) {
   // --- bundle and pages ---
   const bundle = {
     id: story.id, title: T(story.title, 'story.title'), summary, span, cover, languages: langs, defaultLanguage: defaultLang,
-    extent: story.extent, maxZoom: story.max_zoom, ui, families: story.families,
+    extent: story.extent, maxZoom: story.max_zoom, camera: Camera.parse({}), ui, families: story.families,
     site: { title: siteT(site.title, 'site.title'), languages: site.langs, defaultLanguage: site.defaultLang,
       source: site.repository ? `${site.repository.replace(/\/$/, '')}/tree/${site.branch}/content/${story.id}` : null },
     themes: themeList(site.themes, ui, langs), defaultTheme: story.theme ?? site.theme,

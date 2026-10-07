@@ -68,7 +68,8 @@ export const Page = z.object({
   routes: z.array(Id).default([]),
   markers: z.array(Id).default([]),
   battle: Id.optional(), // one battle per page keeps the map readable
-  camera: z.union([z.literal(false), Camera]).optional(), // false keeps a battle page flat
+  camera: z.union([z.literal(false), Camera]).optional()
+    .refine(c => c !== false, 'pages open flat until the reader picks 3D, so camera: false has no use: remove it'),
   // an emblem drawn on the map while the page is open: plugins/emblems/<kind>.mjs, else one harita ships
   emblem: z.object({ kind: Id }).passthrough().optional(),
   images: Images.default({}),
@@ -96,7 +97,7 @@ export const BattlePlan = z.object({
     side: PlanSide, type: z.enum(UNIT_TYPES).default('infantry'), at: LngLat, width: Size, depth: Size.optional(),
     facing: z.number().optional(), bow: z.number().optional(), count: z.number().int().positive().optional(), rows: z.number().int().positive().optional(), ...Piece,
   }).strict()).default([]),
-  arrows: z.array(z.object({ side: PlanSide, path: z.array(LngLat).min(2), width: Size.optional(), style: z.enum(['solid', 'dashed']).optional(), ...Piece }).strict()).default([]),
+  arrows: z.array(z.object({ side: PlanSide, path: z.array(LngLat).min(2), width: Size.optional(), style: z.enum(['solid', 'dashed', 'fire']).optional(), ...Piece }).strict()).default([]),
   clashes: z.array(z.union([LngLat, z.object({ at: LngLat, size: Size.optional() }).strict()])).default([]),
 }).strict().refine(p => p.water.length + p.works.length + p.units.length + p.arrows.length + p.clashes.length > 0, 'a battle plan needs water, works, units, arrows or clashes');
 

@@ -293,7 +293,7 @@ date: 15 to 19 May 1919                       # display text, any wording
 when: { from: 1919-05-15, to: 1919-05-19 }    # optional, for the order check
 title: Occupation, and the landing at Samsun
 bbox: [25.5, 35.6, 43.5, 42.6]
-camera: { pitch: 55, bearing: 20 }  # optional, opens tilted over the 3D terrain, see Relief and 3D
+camera: { pitch: 55, bearing: 20 }  # optional, the view in 3D, see Relief and 3D
 zones: [british, greek1919]
 routes: []
 markers: [istanbul, izmir]
@@ -439,8 +439,9 @@ emblem:
 - `facing` is the compass bearing a unit faces. `width` runs along its front and `depth` from front to back.
   `bow` bends the front: a positive value pushes the centre towards the enemy, a negative one draws it back.
 - `count` sets the number of pieces in a unit drawn as a row, and `rows` the lines of ships.
-- Arrows curve through their points, and `dashed` marks a retreat. A work is a straight wall, or a zigzag
-  with `style: trench`.
+- Arrows curve through their points. `dashed` marks a retreat, and `fire` marks shooting, drawn as three
+  thin arrows that spread towards the target. Each arrow has a thin edge in the paper colour, and a later
+  arrow draws over an earlier one. A work is a straight wall, or a zigzag with `style: trench`.
 - Any unit, arrow, work or water can carry a `name`, shown when the reader points at it. Pieces with the same
   `id` highlight together, and other languages come from the catalogue as for any emblem.
 
@@ -501,18 +502,17 @@ The first build of an area downloads its tiles into `.cache/harita/` in the proj
 them from there; in CI, keep that folder between runs. A country sized story comes to about 25 MB, of
 which a reader downloads only the tiles in view. The shading takes its colours from the theme.
 
-A page with a battle opens tilted over the 3D terrain when its bbox opens at zoom 6 or closer, a view up to
-about 1,000 km across. Any page sets its own view with `camera`, and `camera: false` keeps a battle page flat:
+The map opens flat and north up. A 2D | 3D switch at the top of the map tilts it over the 3D terrain, and the
+browser remembers the choice for later pages. In 3D a page tilts with its own `camera`, else with the defaults:
 
 ```yaml
 camera: { pitch: 55, bearing: 20, exaggeration: 2 }
 ```
 
 `pitch` is the tilt in degrees from straight down, 10 to 60, 50 by default. `bearing` turns the view
-clockwise from north, 0 by default. `exaggeration` multiplies the heights, 2 by default. On a 3D page a
-2D | 3D switch at the top of the map lays the map flat and north up, or tilts it again, and the browser
-remembers the choice for later pages. In 3D the reader can turn and tilt the view by dragging with the right
-mouse button or with Ctrl held, or with two fingers. The next page opens at its own view.
+clockwise from north, 0 by default. `exaggeration` multiplies the heights, 2 by default. In 3D the reader can
+turn and tilt the view by dragging with the right mouse button or with Ctrl held, or with two fingers. The
+next page opens at its own view.
 
 The "Map data" list names Natural Earth for borders and coasts and every elevation source whose area
 overlaps the story's extent, each with the credit its licence asks for.

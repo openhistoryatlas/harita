@@ -155,7 +155,7 @@ function mapInit(){
   let m;
   try {
     m = new maplibregl.Map({
-      container:'map', attributionControl:false,
+      container:'map', attributionControl:false, canvasContextAttributes:{ antialias:true }, // smooths the emblem's edges, see below
       style:{ version:8, sources:{}, ...(B.labels ? { glyphs: GLYPHS } : {}), layers:[{ id:'bg', type:'background', paint:{ 'background-color': css('--sea') } }] },
       bounds:[[w, s], [e, n]], minZoom:3.5, maxZoom:B.maxZoom ?? 11, dragRotate:false, touchPitch:false, keyboard:false // arrow keys step pages, never pan
     });
@@ -205,7 +205,8 @@ function mapInit(){
         layout:{ 'symbol-placement':'line', 'symbol-spacing':70, 'icon-image':'route-arrow', 'icon-rotation-alignment':'map', 'icon-allow-overlap':true, 'icon-ignore-placement':true, 'icon-keep-upright':false, 'icon-offset':[0, offset] } });
     }
     m.addSource('emblem', { type:'geojson', data: { type:'FeatureCollection', features: [] } });
-    m.addLayer({ id:'emblem', type:'fill', source:'emblem', paint:{ 'fill-color': emblemFill(), 'fill-opacity': emblemOpacity(null) } });
+    // the GPU smooths the emblem's edges, since MapLibre's edge pass draws covered shapes' edges over the shapes on top
+    m.addLayer({ id:'emblem', type:'fill', source:'emblem', paint:{ 'fill-color': emblemFill(), 'fill-opacity': emblemOpacity(null), 'fill-antialias': false } });
     m.addLayer({ id:'emblem-hl', type:'line', source:'emblem', filter: emblemOutline(null), paint:{ 'line-color': css('--ink'), 'line-width': 2 } });
     if (B.labels) { // atlas lettering: small caps in ink-2 with a land coloured halo, larger countries win a collision
       m.addSource('labels', { type:'geojson', data: { type:'FeatureCollection', features: B.labels } });
@@ -251,12 +252,15 @@ function mapTheme(){
 function emblemFill(){
   const fallback = ['coalesce', ['get', 'color'], css('--accent')], fams = Object.keys(B.families);
   const own = fams.length ? ['match', ['get', 'family'], ...fams.flatMap(f => [f, css(colorVar(f))]), fallback] : fallback;
-  return ['case', ['has', 'tint'], landFill(), own];   // land in a battle plan takes its country's tint
+  // land in a battle plan takes its country's tint, and an arrow's casing the paper colour
+  return ['case', ['has', 'tint'], landFill(), ['has', 'casing'], css('--paper'), own];
 }
 // a highlighted emblem feature keeps its colour and gains an outline, the rest of the emblem fades; a "hit" feature
-// is never drawn, it only widens the area the reader can point at, such as the gaps in a row of ships
-const emblemOpacity = id => ['case', ['to-boolean', ['get', 'hit']], 0, ['has', 'tint'], 1, id == null ? 0.92 : ['case', ['==', ['get', 'id'], id], 0.92, 0.3]];
-const emblemOutline = id => ['all', ['==', ['get', 'id'], id ?? ''], ['!', ['to-boolean', ['get', 'hit']]]];
+// is never drawn, it only widens the area the reader can point at, such as the gaps in a row of ships. An arrow's
+// casing is opaque, so it hides the arrow under it
+const emblemOpacity = id => { const shown = ['case', ['has', 'casing'], 1, 0.92];
+  return ['case', ['to-boolean', ['get', 'hit']], 0, ['has', 'tint'], 1, id == null ? shown : ['case', ['==', ['get', 'id'], id], shown, 0.3]]; };
+const emblemOutline = id => ['all', ['==', ['get', 'id'], id ?? ''], ['!', ['to-boolean', ['get', 'hit']]], ['!', ['has', 'casing']]];
 function emblemLook(id){
   ML.map.setPaintProperty('emblem', 'fill-opacity', emblemOpacity(id));
   ML.map.setFilter('emblem-hl', emblemOutline(id));
@@ -332,12 +336,11 @@ function hitAt(pt){
 }
 const canHover = matchMedia('(hover: hover)');
 const onOverlay = e => e.originalEvent?.target?.closest?.('.maplibregl-marker, .maplibregl-popup');
-// A page with a camera opens tilted over the 3D terrain, unless the reader chose the flat map; every other view is
-// flat and north up. The terrain goes once the map has laid flat, so the flight down stays smooth.
-let view = pref('view', ['2d', '3d'], '3d');
-const tilted = page => !!page.camera && view === '3d';
+// The map is flat and north up until the reader picks 3D. In 3D a page tilts over the terrain with its own camera,
+// else the story's. The terrain goes once the map has laid flat, so the flight down stays smooth.
+let view = pref('view', ['2d', '3d'], '2d');
 function camera(page, duration){
-  const m = ML.map, c = tilted(page) ? page.camera : null, token = ++ML.camera;
+  const m = ML.map, c = view === '3d' ? page.camera ?? B.camera : null, token = ++ML.camera;
   if (c) m.setTerrain({ source:'dem-3d', exaggeration: c.exaggeration });
   else if (m.getTerrain()) m.once('moveend', () => { if (ML.camera === token) m.setTerrain(null); });
   const bearing = c ? c.bearing : 0, pitch = c ? c.pitch : 0;
@@ -351,14 +354,13 @@ function freeCamera(on){
   for (const h of [m.dragRotate, m.touchPitch]) on ? h.enable() : h.disable();
   on ? m.touchZoomRotate.enableRotation() : m.touchZoomRotate.disableRotation();
 }
-function renderView(page){
-  $('view').hidden = !page.camera;
+function renderView(){
   for (const b of $('view').querySelectorAll('button')) b.setAttribute('aria-pressed', b.dataset.view === view);
 }
 function mapApply(page, first){
   const m = ML.map; if (!m || !ML.ready) return;
   camera(page, first ? 0 : DUR);
-  renderView(page);
+  renderView();
   ML.hl = null; $('hl-label').hidden = true;
   for (const id in B.zones) zoneShow(id, page.zones.includes(id));
   for (const id in B.routes) routeWidth(id, false);
@@ -562,7 +564,7 @@ $('legend-btn').onclick = () => document.body.classList.toggle('legend-open');
 $('view').onclick = e => {
   const b = e.target.closest('button'); if (!b || b.dataset.view === view) return;
   view = b.dataset.view; savePref('view', view);
-  clearHighlight(); renderView(here()); camera(here(), reduced ? 0 : 900);
+  clearHighlight(); renderView(); camera(here(), reduced ? 0 : 900);
 };
 // the map data popup and the page's other sources popup share the credit bar, one open at a time
 const CREDIT_POPUPS = { mapdata: 'credits', othersrc: 'othercredits' };

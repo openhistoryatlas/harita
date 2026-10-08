@@ -145,11 +145,17 @@ export const Include = z.object({
 }).strict();
 
 const Ring = z.array(z.tuple([Lon, Lat])).min(4);
-export const Zone = z.object({
-  type: z.literal('Feature'),
-  properties: z.object({ id: Id.optional(), family: Id, name: Translatable, clip: z.array(z.string()).optional() }).strict(), // clip: countries, else the story's land
-  geometry: z.object({ type: z.literal('Polygon'), coordinates: z.array(Ring).min(1) }),
-});
+const ZoneProperties = { family: Id, name: Translatable, clip: z.array(z.string()).optional() }; // clip: countries, else the story's land
+const ZoneGeometry = z.object({ type: z.literal('Polygon'), coordinates: z.array(Ring).min(1) });
+export const Zone = z.object({ type: z.literal('Feature'), properties: z.object({ id: Id.optional(), ...ZoneProperties }).strict(), geometry: ZoneGeometry });
+// zone.geojson in a shared zone folder, content/shared/zones/<id>/: the folder name is its id
+export const SharedZone = z.object({ type: z.literal('Feature'), properties: z.object({ ...ZoneProperties, default_language: Lang.default('en') }).strict(), geometry: ZoneGeometry });
+// zones.yaml: zones that take their outline from another zone, of the story or shared, with their own name or family
+export const ZoneUses = z.record(Id, z.object({ zone: Id, name: Translatable.optional(), family: Id.optional(), clip: z.array(z.string()).optional() }).strict());
+// content/shared/zones/apart.yaml: pairs that cover the same land and stay apart, with the drawings as they were checked
+const ZoneRef = z.string().regex(/^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/, '<story>/<zone id>, or shared/<zone id>');
+const Drawing = z.string().regex(/^[0-9a-f]{64}$/, 'a drawing hash, harita zones --apart writes it');
+export const Apart = z.array(z.object({ zones: z.tuple([ZoneRef, ZoneRef]), why: z.string().min(1), drawings: z.tuple([Drawing, Drawing]) }).strict());
 export const Route = z.object({
   type: z.literal('Feature'),
   properties: z.object({ id: Id.optional(), name: Translatable, style: z.enum(['solid', 'dashed']).default('solid'), arrows: z.boolean().default(true), offset: z.number().min(-20).max(20).default(0) }).strict(),

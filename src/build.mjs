@@ -1,7 +1,6 @@
 // Walk content/<story>/, clean the geometry, render the texts, and write dist/.
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import yaml from 'js-yaml';
@@ -10,13 +9,16 @@ import * as turf from '@turf/turf';
 import * as tc from 'topojson-client';
 import * as ts from 'topojson-server';
 import polylabel from 'polylabel';
-import { check, Site, Story, Group, Page, Camera, Markers, Battle, Include, ImageFolder, Zone, Route, Themes, BattlePlan } from './schema.mjs';
+import { check, Site, Story, Group, Page, Camera, Markers, Battle, Include, ImageFolder, Zone, SharedZone, ZoneUses, Route, Themes, BattlePlan } from './schema.mjs';
 import { alikePairs, describe } from './palette.mjs';
 import { loadCatalogues, translator, flatten, unflatten } from './i18n.mjs';
 import { coverage, packZones } from './coverage.mjs';
 import { terrainPlan, tileKeys, terrainTiles, openZoom } from './terrain.mjs';
 import { esc, ordinals, siteContext, storyFiles, siteFiles } from './pages.mjs';
-import { battleDirs } from './folders.mjs';
+import { libraryItems, isImage, isBattle, isZone } from './folders.mjs';
+import { world } from './world.mjs';
+import { hash, listDirs, idOf, boxesMeet } from './util.mjs';
+import { zonePairs, describePair } from './zones.mjs';
 import { sha256 } from './image.mjs';
 
 // PKG is this package. The content project comes in as the root of each build.
@@ -28,7 +30,6 @@ const COMMON = fs.readFileSync(path.join(PKG, 'src', 'common.js'), 'utf8').repla
 const APP = fs.readFileSync(path.join(PKG, 'src', 'app.html'), 'utf8');
 const APP_JS = COMMON + '\n' + fs.readFileSync(path.join(PKG, 'src', 'app.js'), 'utf8');
 const INDEX = fs.readFileSync(path.join(PKG, 'src', 'index.html'), 'utf8').replace('/*__COMMON__*/', COMMON);
-const hash = value => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 // a script's version in its URL, so a browser holding the last release's copy fetches the new one
 const version = text => hash(text).slice(0, 10);
 // the shape of the main page card kept in the cache. A card of another shape counts as no cache.
@@ -46,36 +47,10 @@ const copyFresh = (file, dest) => {
 };
 const writeCache = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}`; fs.writeFileSync(tmp, JSON.stringify(value)); fs.renameSync(tmp, file); };
 // the code and libraries the cleaned zones come from, part of each story's zone cache key
-const GEOMETRY_CODE = hash(['build.mjs', 'coverage.mjs'].map(f => fs.readFileSync(path.join(PKG, 'src', f), 'utf8'))
+const GEOMETRY_CODE = hash(['build.mjs', 'coverage.mjs', 'world.mjs', 'util.mjs'].map(f => fs.readFileSync(path.join(PKG, 'src', f), 'utf8'))
   .concat(['@turf/turf', 'world-atlas', 'topojson-server', 'topojson-client'].map(m => require(m + '/package.json').version)));
 const UI_DIR = path.join(PKG, 'src', 'i18n');
 const UI = Object.fromEntries(fs.readdirSync(UI_DIR).filter(f => f.endsWith('.yaml')).map(f => [f.replace(/\.yaml$/, ''), yaml.load(fs.readFileSync(path.join(UI_DIR, f), 'utf8'))]));
-// Natural Earth countries, parsed on the first build so that importing the package stays cheap
-let worldFeatures = null;
-const world = () => { if (!worldFeatures) { const w = JSON.parse(fs.readFileSync(require.resolve('world-atlas/countries-10m.json'))); worldFeatures = tc.feature(w, w.objects.countries).features.map(f => ({ ...f, geometry: f.geometry && unwrap(f.geometry) })); } return worldFeatures; };
-// Russia has a ring that jumps from 180 to -180 and back, which a planar clip reads as edges across the whole map.
-// The ring runs on past 180 instead, with a copy a turn to the west for the part beyond the antimeridian.
-const unwrapRing = ring => {
-  let shift = 0;
-  const out = [];
-  for (const [x, y] of ring) {
-    const step = x + shift - (out.at(-1)?.[0] ?? x + shift);
-    if (Math.abs(step) > 180) shift -= Math.sign(step) * 360;
-    out.push([x + shift, y]);
-  }
-  return shift === 0 ? out : ring;   // a ring round the pole does not close when unwrapped, so it stays as it is
-};
-function unwrap(geometry) {
-  const polys = [];
-  for (const p of geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates) {
-    const rings = p.map(unwrapRing), xs = rings[0].map(c => c[0]);
-    polys.push(rings);
-    const east = xs.reduce((a, b) => Math.max(a, b)), west = xs.reduce((a, b) => Math.min(a, b));
-    if (east > 180) polys.push(rings.map(r => r.map(([x, y]) => [x - 360, y])));
-    if (west < -180) polys.push(rings.map(r => r.map(([x, y]) => [x + 360, y])));
-  }
-  return polys.length === 1 ? { type: 'Polygon', coordinates: polys[0] } : { type: 'MultiPolygon', coordinates: polys };
-}
 // Marker icons come from Lucide; the names the first stories used before map onto it
 const ICON_DIR = path.dirname(require.resolve('lucide-static/icons/flag.svg'));
 const LEGACY_ICONS = { congress: 'users', scroll: 'scroll-text', building: 'landmark' };
@@ -87,13 +62,12 @@ function iconSvg(name, where) {
 
 const fail = (where, msg) => { throw new Error(`${where}: ${msg}`); };
 const exists = p => fs.existsSync(p);
-const listDirs = p => exists(p) ? fs.readdirSync(p).filter(d => fs.statSync(path.join(p, d)).isDirectory()).sort() : [];
 const listFiles = (p, ext) => exists(p) ? fs.readdirSync(p).filter(f => f.endsWith(ext)).sort() : [];
+// the .geojson files of a zones/ folder, in its subfolders too, which only order them
+const geojsonIn = p => exists(p) ? fs.readdirSync(p, { recursive: true }).filter(f => f.endsWith('.geojson') && !f.split(path.sep).some(x => x.startsWith('.'))).sort() : [];
 const km2 = f => turf.area(f) / 1e6;
 const intersect = (a, b) => turf.intersect(turf.featureCollection([a, b]));
-const boxesMeet = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
 const difference = (a, b) => turf.difference(turf.featureCollection([a, b]));
-const idOf = name => name.replace(/^\d+-/, '');
 const writeFile = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 
 const emptyText = langs => Object.fromEntries(langs.map(l => [l, '']));
@@ -124,7 +98,7 @@ function project(root, log) {
   const rel = p => path.relative(root, p);
   const loadYaml = p => { try { return yaml.load(fs.readFileSync(p, 'utf8')) ?? {}; } catch (e) { fail(rel(p), e.message); } };
   const readYaml = (p, schema) => check(schema, loadYaml(p), rel(p));
-  const readJson = (p, schema) => check(schema, JSON.parse(fs.readFileSync(p, 'utf8')), rel(p));
+  const readJson = (p, schema) => { let data; try { data = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { fail(rel(p), e.message); } return check(schema, data, rel(p)); };
   return { root, content: path.join(root, 'content'), dist: path.join(root, 'dist'), log, rel, loadYaml, readYaml, readJson };
 }
 
@@ -227,25 +201,30 @@ function readContent(p, storyDir, onProblem = null) {
   const families = { ...story.families };
   const texts = {}, firstImages = {};
 
+  // the items of a library at any depth, by their folder names as written, so a reference finds the same folder on
+  // every file system
+  const libraries = new Map();
+  const library = (dir, isItem, pattern, rule) => {
+    if (!libraries.has(dir)) {
+      let items;
+      try { items = libraryItems(dir, isItem, rel); } catch (err) { fail(rel(dir), err.message); }
+      for (const [name, full] of items) if (!pattern.test(name)) fail(rel(full), rule);
+      libraries.set(dir, items);
+    }
+    return libraries.get(dir);
+  };
+  const ID = /^[a-z0-9][a-z0-9-]*$/;
+  const imageLib = dir => library(dir, isImage, /^[a-z0-9][a-z0-9-]*-[0-9a-f]{6}$/, 'an image folder is named <name>-<six hex digits>, such as hastings-knights-3f9a1c, and harita image <file> <name> makes one');
+  const battleLib = dir => library(dir, isBattle, ID, 'a battle folder is named in lowercase letters, digits and dashes, such as ankara-1402');
+  const zoneLib = dir => library(dir, isZone, ID, 'a zone folder is named in lowercase letters, digits and dashes, such as ottoman-1402');
+  const storyImages = path.join(shared, 'images'), commonImages = path.join(p.content, 'shared', 'images');
   // A scope is the story's files or one battle folder's. ns turns an id its files use into the bundle's id, fam a
   // family they name into the bundle's family, and pageId a page folder's id into the page's id in the story.
-  // folder names as written, so a reference finds the same folder on every file system
-  const named = new Map();
-  const namesIn = (dir, pattern, rule) => {
-    if (!named.has(dir)) {
-      const names = listDirs(dir);
-      for (const n of names) if (!pattern.test(n)) fail(rel(path.join(dir, n)), rule);
-      named.set(dir, new Set(names));
-    }
-    return named.get(dir);
-  };
-  const IMAGE_ID = /^[a-z0-9][a-z0-9-]*-[0-9a-f]{6}$/, BATTLE_ID = /^[a-z0-9][a-z0-9-]*$/;
-  const storyImages = path.join(shared, 'images'), commonImages = path.join(p.content, 'shared', 'images');
   const storyScope = { battle: null, T, defaultLang, families: story.families, ns: id => id, fam: f => f, pageId: id => id, maxZoom: story.max_zoom,
     imageDirs: [storyImages, commonImages], texts, firstImages };
 
   // --- image folders: <id>/image.<ext> with image.yaml, read when a text, marker or card first names one ---
-  const folderImages = {};
+  const folderImages = {}, sharedImageIds = new Set();
   // an image any story can show goes to dist/images/, once for the whole site, so its src leaves the story folder
   const imageSrc = (id, ext, shared) => `${shared ? '../' : ''}images/${id}${ext}`;
   const loadImageFolder = (dir, id) => {
@@ -253,34 +232,83 @@ function readContent(p, storyDir, onProblem = null) {
     const meta = path.join(dir, 'image.yaml'), files = fs.readdirSync(dir).filter(f => /^image\.\w+$/.test(f) && f !== 'image.yaml');
     if (!exists(meta)) fail(rel(dir), 'image.yaml is missing');
     if (files.length !== 1) fail(rel(dir), files.length ? `keep one image file of ${files.join(', ')}` : 'add the image file, image.jpg, image.png or image.svg');
-    const m = readYaml(meta, ImageFolder);
-    // --strict holds every image to the sha256 its image.yaml records, which the lookups of harita image rely on
-    if (p.strict && !m.sha256) fail(rel(meta), 'no sha256, harita rehash writes it');
-    if (p.strict && m.sha256 !== sha256(path.join(dir, files[0]))) fail(rel(meta), `${files[0]} changed after its sha256 was written, harita rehash writes the new one`);
-    const t = translator({ langs, defaultLang: m.default_language, catalogues: loadCatalogues(path.join(dir, 'i18n'), langs, p.loadYaml), where: `${rel(dir)}/i18n`, fail });
-    define(images, id, { id, src: imageSrc(id, path.extname(files[0]), path.dirname(dir) === commonImages), caption: t.tr(m.caption, 'image.caption'), credit: m.credit ? t.tr(m.credit, 'image.credit', { shared: true }) : emptyText(langs) }, rel(meta), 'image', dir);
+    const m = readYaml(meta, ImageFolder), shared = imageLib(commonImages).get(id) === dir;
+    if (shared) sharedImageIds.add(id);
+    const t = translator({ langs, defaultLang: m.default_language, catalogues: loadCatalogues(path.join(dir, 'i18n'), langs, p.loadYaml), where: rel(meta), fail });
+    define(images, id, { id, src: imageSrc(id, path.extname(files[0]), shared), caption: t.tr(m.caption, 'image.caption'), credit: m.credit ? t.tr(m.credit, 'image.credit', { shared: true }) : emptyText(langs) }, rel(meta), 'image', dir);
     imageFiles[id] = path.join(dir, files[0]);
-    folderImages[id] = { id, dir: rel(dir), defaultLang: m.default_language, translator: t };
+    folderImages[id] = { id, dir: rel(dir), meta: rel(meta), file: path.join(dir, files[0]), sha256: m.sha256 ?? null, defaultLang: m.default_language, translator: t };
     return id;
   };
-  // an image a text, marker or card names: one its own files define, else an image folder it sees
+  // an image a text, marker or card names: the image folder the scope sees by that id
   const resolveImage = (s, ref, at) => {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(ref)) fail(at, `unknown image "${ref}", an image id is lowercase letters, digits and dashes`);
-    const rule = 'an image folder is named <name>-<six hex digits>, such as hastings-knights-3f9a1c, and harita image <file> <name> makes one';
-    const dirs = s.imageDirs.filter(d => namesIn(d, IMAGE_ID, rule).has(ref)).map(d => path.join(d, ref));
+    const dirs = s.imageDirs.map(d => imageLib(d).get(ref)).filter(Boolean);
     if (dirs.length > 1) fail(at, `image "${ref}" is in ${dirs.map(rel).join(' and ')}, keep one`);
     if (dirs.length) return loadImageFolder(dirs[0], ref);
     fail(at, `unknown image "${ref}"`);
   };
 
+  // --- shared zones: content/shared/zones/<id>/zone.geojson, read when a story first names one ---
+  const commonZones = path.join(p.content, 'shared', 'zones'), zoneFolders = {}, zoneFiles = new Set(), zoneUses = [];
+  const sharedIds = () => zoneLib(commonZones);
+  const checkClip = (clip, at) => { for (const n of clip ?? []) if (!story.countries.includes(n)) fail(at, `clip country "${n}" is not in the countries of ${rel(storyFile)}`); };
+  // the folder as written: its outline, its name and its family before the story's aliases
+  const sharedZone = (id, at) => {
+    if (zoneFolders[id]) return zoneFolders[id].data;
+    if (!sharedIds().has(id)) fail(at, `unknown zone "${id}"`);
+    const dir = sharedIds().get(id), file = path.join(dir, 'zone.geojson'), feat = readJson(file, SharedZone);
+    const t = translator({ langs, defaultLang: feat.properties.default_language, catalogues: loadCatalogues(path.join(dir, 'i18n'), langs, p.loadYaml), where: rel(file), fail });
+    const data = { family: feat.properties.family, name: t.tr(feat.properties.name, 'zone.name'), geometry: feat.geometry, clipNames: feat.properties.clip ?? null, file: rel(file), dir };
+    zoneFolders[id] = { id, dir: rel(dir), defaultLang: feat.properties.default_language, translator: t, data, used: false };
+    return data;
+  };
+  // a shared zone's family is the story's family of that id or alias, for its colour and its place among the zones
+  const sharedFamily = d => storyFamily(d.family) ?? fail(d.file, `family "${d.family}" is not in ${rel(storyFile)}, give a family there the id or alias "${d.family}", or the zone a family of the story in zones.yaml`);
+  // a zone a page or an include names: the story's, else a shared one as it is
+  const resolveZone = (id, at) => {
+    if (zoneFiles.has(id) && sharedIds().has(id)) fail(at, `zone "${id}" is in ${rel(definedIn[`zone ${id}`])} and in ${rel(sharedIds().get(id))}, keep one`);
+    if (zones[id]) return id;
+    const d = sharedZone(id, at);
+    checkClip(d.clipNames, d.file);
+    define(zones, id, { id, family: sharedFamily(d), name: d.name, geometry: d.geometry, clipNames: d.clipNames }, d.file, 'zone', d.dir);
+    zoneFolders[id].used = true;
+    return id;
+  };
+  // a zones.yaml entry: the outline of the zone it names, its own name and family where it gives them, and the clip
+  // the story chose for it, else the story's land
+  const resolving = [];
+  const useZone = u => {
+    if (u.done) return zones[u.id];
+    if (resolving.includes(u.id)) fail(u.file, `zone "${u.id}" takes its outline from itself, through ${resolving.join(', ')}`);
+    resolving.push(u.id);
+    try {
+      const entry = u.zone !== u.id && zoneUses.find(x => x.id === u.zone);
+      const other = u.zone !== u.id && (entry ? useZone(entry) : zones[u.zone]);
+      const base = other || sharedZone(u.zone, u.file), shared = !other;
+      const family = u.family ? storyFamily(u.family) ?? fail(u.file, `zone "${u.id}" uses unknown family "${u.family}"`) : shared ? sharedFamily(base) : base.family;
+      checkClip(u.clip, u.file);
+      // a zone file or another entry of this id makes define report it twice
+      define(zones, u.id, { id: u.id, family, name: u.name ? T(u.name, `zones.${u.id}.name`) : base.name, geometry: base.geometry, clipNames: u.clip ?? null }, u.file, 'zone', u.dir);
+      if (shared && !u.name) zoneFolders[u.zone].used = true;
+      u.done = true;
+      return zones[u.id];
+    } finally { resolving.pop(); }
+  };
+
   // --- zones, routes and markers one folder defines ---
   const defineIn = (dir, s) => {
     const zoneDir = path.join(dir, 'zones');
-    if (!s.battle) for (const f of listFiles(zoneDir, '.geojson')) attempt(dir, () => {
-      const file = path.join(zoneDir, f), feat = readJson(file, Zone), id = feat.properties.id ?? idOf(f.replace('.geojson', ''));
+    if (!s.battle) for (const f of geojsonIn(zoneDir)) attempt(dir, () => {
+      const file = path.join(zoneDir, f), feat = readJson(file, Zone), id = feat.properties.id ?? idOf(path.basename(f, '.geojson'));
       if (!story.families[feat.properties.family]) fail(rel(file), `unknown family "${feat.properties.family}"`);
       for (const n of feat.properties.clip ?? []) if (!story.countries.includes(n)) fail(rel(file), `clip country "${n}" is not in the story's countries`);
       define(zones, id, { id, family: feat.properties.family, name: T(feat.properties.name, `zones.${id}.name`), geometry: feat.geometry, clipNames: feat.properties.clip ?? null }, rel(file), 'zone', dir);
+      zoneFiles.add(id);
+    });
+    const usesFile = path.join(dir, 'zones.yaml');
+    if (!s.battle && exists(usesFile)) attempt(dir, () => {
+      for (const [id, u] of Object.entries(readYaml(usesFile, ZoneUses))) zoneUses.push({ id, ...u, file: rel(usesFile), dir });
     });
     for (const f of listFiles(path.join(dir, 'routes'), '.geojson')) attempt(dir, () => {
       const file = path.join(dir, 'routes', f), feat = readJson(file, Route), own = feat.properties.id ?? idOf(f.replace('.geojson', '')), id = s.ns(own);
@@ -335,15 +363,14 @@ function readContent(p, storyDir, onProblem = null) {
   };
   // the whole folder, pages included, also for a story that shows the card alone: its catalogues keep every key
   function loadBattle(id, at) {
-    const own = path.join(shared, 'battles', id), common = path.join(p.content, 'shared', 'battles', id);
-    for (const d of [own, common]) namesIn(path.dirname(d), BATTLE_ID, 'a battle folder is named in lowercase letters, digits and dashes, such as ankara-1402');
-    const found = battleDirs(p.content, storyDir, id);
-    if (found.length > 1) fail(at, `battle "${id}" is in both ${rel(own)} and ${rel(common)}, keep one`);
-    const dir = found[0] ?? fail(at, `unknown battle "${id}", add ${rel(own)}/battle.yaml or ${rel(common)}/battle.yaml`);
+    const ownLib = path.join(shared, 'battles'), commonLib = path.join(p.content, 'shared', 'battles');
+    const own = battleLib(ownLib).get(id), found = [own, battleLib(commonLib).get(id)].filter(Boolean);
+    if (found.length > 1) fail(at, `battle "${id}" is in both ${rel(found[0])} and ${rel(found[1])}, keep one`);
+    const dir = found[0] ?? fail(at, `unknown battle "${id}", add ${rel(path.join(ownLib, id))}/battle.yaml or ${rel(path.join(commonLib, id))}/battle.yaml`);
     const file = path.join(dir, 'battle.yaml');
     if (!exists(file)) fail(rel(dir), 'battle.yaml is missing');
     const b = readYaml(file, Battle);
-    const t = translator({ langs, defaultLang: b.default_language, catalogues: loadCatalogues(path.join(dir, 'i18n'), langs, p.loadYaml), where: `${rel(dir)}/i18n`, fail });
+    const t = translator({ langs, defaultLang: b.default_language, catalogues: loadCatalogues(path.join(dir, 'i18n'), langs, p.loadYaml), where: rel(file), fail });
     const s = { battle: id, T: t.tr, defaultLang: b.default_language, families: b.families, ns: x => `${id}/${x}`, fam: f => `${id}_${f}`,
       pageId: x => `${id}-${x}`, maxZoom: Math.max(story.max_zoom, b.max_zoom ?? 0), fallbacks: {},
       // a story's own battle sees the story's image folders, a shared battle the shared ones alone
@@ -363,7 +390,7 @@ function readContent(p, storyDir, onProblem = null) {
     });
     battles[id] = { id, lnglat: b.lnglat, name: s.T(b.name, 'battle.name'), date: s.T(b.date, 'battle.date'), result: b.result ? s.T(b.result, 'battle.result') : null,
       sides, images: [], source: b.source ?? null, front: b.front ?? null };
-    for (const f of fs.readdirSync(dir, { recursive: true })) if (path.basename(f) === 'zones') attempt(dir, () => fail(rel(path.join(dir, f)), 'a battle holds no zones, the story that includes it shows its own with zones in include.yaml'));
+    for (const f of fs.readdirSync(dir, { recursive: true })) if (['zones', 'zones.yaml'].includes(path.basename(f))) attempt(dir, () => fail(rel(path.join(dir, f)), 'a battle holds no zones, the story that includes it shows its own with zones in include.yaml'));
     const tree = walk(path.join(dir, 'pages'), s), nodes = pagesIn(tree);
     let done = false;
     const ctx = { id, dir: rel(dir), defaultLang: s.defaultLang, tree, pages: {}, translator: t, fallbacks: s.fallbacks, include: null,
@@ -395,7 +422,7 @@ function readContent(p, storyDir, onProblem = null) {
     const texts = s.texts[pid] = {}, firstImages = s.firstImages[pid] = {};
     const need = (ok, msg) => attempt(dir, () => ok || fail(at, msg));
     if (s.battle && pg.zones.length) need(false, 'a battle page has no zones, the story that includes the battle shows its own with zones in include.yaml');
-    for (const z of pg.zones) need(zones[z], `unknown zone "${z}"`);
+    for (const z of pg.zones) attempt(dir, () => resolveZone(z, at));
     for (const r of pg.routes) need(routes[s.ns(r)], `unknown route "${r}"`);
     for (const m of pg.markers) need(markers[s.ns(m)], `unknown marker "${m}"`);
     let battle = null;
@@ -447,8 +474,10 @@ function readContent(p, storyDir, onProblem = null) {
   for (const dir of storyDirs) if (exists(path.join(dir, 'battles.yaml')))
     fail(rel(path.join(dir, 'battles.yaml')), 'battles live in folders now, one per battle: content/<story>/shared/battles/<id>/battle.yaml, or content/shared/battles/<id>/battle.yaml for a battle several stories share');
   for (const dir of storyDirs) defineIn(dir, storyScope);
+  // zones.yaml entries once every zone file is read, since an entry may take the outline of one read later
+  for (const u of zoneUses) attempt(u.dir, () => useZone(u));
   for (const inc of includes) attempt(inc.dir, () => {
-    for (const z of inc.zones) if (!zones[z]) fail(inc.file, `unknown zone "${z}"`);
+    for (const z of inc.zones) resolveZone(z, inc.file);
     for (const m of inc.markers) if (!markers[m]) fail(inc.file, `unknown marker "${m}"`);
   });
   const pages = nodes.map(n => {
@@ -466,6 +495,12 @@ function readContent(p, storyDir, onProblem = null) {
   const shownImages = new Set([...pages.flatMap(pg => [...langs.flatMap(l => [...(texts[pg.id]?.[l] ?? '').matchAll(/^@image\s+(\S+)\s*$/gm)].map(m => m[1])), ...(pg.battle ? battles[pg.battle]?.images ?? [] : [])]),
     ...[...shownMarkers].map(m => markers[m]?.image).filter(Boolean), ...(coverImage ? [coverImage] : [])]);
   for (const [table, shown] of [[routes, shownRoutes], [markers, shownMarkers], [images, shownImages], [imageFiles, shownImages]]) for (const id of Object.keys(table)) if (!shown.has(id)) delete table[id];
+  // --strict holds each image it ships to the sha256 its image.yaml records, which harita image looks images up by
+  const shipped = Object.values(folderImages).filter(f => shownImages.has(f.id));
+  if (p.strict) for (const f of shipped) {
+    if (!f.sha256) fail(f.meta, 'no sha256, harita rehash writes it');
+    if (f.sha256 !== sha256(f.file)) fail(f.meta, `${path.basename(f.file)} changed after its sha256 was written, harita rehash writes the new one`);
+  }
   for (let i = 1; i < pages.length; i++) attempt(path.join(root, pages[i].dir), () => {
     if (pages.find((q, j) => j < i && q.id === pages[i].id)) fail(where, `two pages share the id "${pages[i].id}"`);
     const prev = pages.slice(0, i).reverse().find(q => q.when);
@@ -475,13 +510,13 @@ function readContent(p, storyDir, onProblem = null) {
     fail(where, `${pages[i].dir} starts ${pages[i].when.from}, before ${prev.dir} which starts ${prev.when.from}; ${moved ? `renumber ${moved} to move the battle` : 'fix the folder numbers or the when fields'}`);
   });
   return { story, langs, defaultLang, T, entries, translations: report, tree, zones, routes, markers, battles, images, imageFiles, icons, pages, texts, firstImages, families, warnings, battleList,
-    imageFolders: Object.values(folderImages), coverImage };
+    imageFolders: Object.values(folderImages), shippedImages: shipped, sharedImageIds, zoneFolders: Object.values(zoneFolders), coverImage };
 }
 
 function buildStory(p, storyDir, site) {
   const { log, root } = p;
   const where = p.rel(storyDir);
-  const { story, langs, defaultLang, T, entries, translations, tree, zones: rawZones, routes, markers, battles, images, imageFiles, icons, pages, texts, firstImages, families, warnings, battleList, imageFolders, coverImage } = readContent(p, storyDir);
+  const { story, langs, defaultLang, T, entries, translations, tree, zones: rawZones, routes, markers, battles, images, imageFiles, icons, pages, texts, firstImages, families, warnings, battleList, imageFolders, shippedImages, sharedImageIds, zoneFolders, coverImage } = readContent(p, storyDir);
   for (const w of warnings) log(`  warning: ${w}`);
   const ui = uiFor(langs, root);
   const { tr: siteT } = translator({ langs, defaultLang: site.default_language ?? defaultLang, catalogues: loadCatalogues(path.join(root, 'i18n'), langs, p.loadYaml), where: 'i18n', fail });
@@ -493,7 +528,7 @@ function buildStory(p, storyDir, site) {
   fs.mkdirSync(path.join(out, 'images'), { recursive: true });
   const sharedImages = [];
   for (const [id, file] of Object.entries(imageFiles)) {
-    const src = images[id].src, shared = src.startsWith('../');
+    const src = images[id].src, shared = sharedImageIds.has(id);
     if (shared) sharedImages.push(src.slice(3));
     copyFresh(file, shared ? path.join(p.dist, src.slice(3)) : path.join(out, src));
   }
@@ -623,10 +658,10 @@ function buildStory(p, storyDir, site) {
     covered(`battle ${b.id} `, lang, r.total, r.missing, b.dir, noText.length ? `, ${noText.length} pages without text/${lang}.md` : '');
     if (p.strict && noText.length) fail(b.dir, `${lang}: no text/${lang}.md on ${noText.join(', ')}`);
   }
-  // the image folders the story shows count together
-  for (const lang of langs) {
-    const reports = imageFolders.map(f => [f, f.translator.report()[lang]]).filter(([, r]) => r);
-    if (reports.length) covered('image folders ', lang, reports.reduce((n, [, r]) => n + r.total, 0), reports.flatMap(([f, r]) => r.missing.map(k => `${f.id} ${k}`)), where);
+  // the image folders the story ships and the zone folders whose names it shows count together, one line each
+  for (const [label, folders] of [['image folders ', shippedImages], ['zone folders ', zoneFolders.filter(f => f.used)]]) for (const lang of langs) {
+    const reports = folders.map(f => [f, f.translator.report()[lang]]).filter(([, r]) => r);
+    if (reports.length) covered(label, lang, reports.reduce((n, [, r]) => n + r.total, 0), reports.flatMap(([f, r]) => r.missing.map(k => `${f.id} ${k}`)), where);
   }
   for (const lang of langs.filter(l => l !== 'en')) {
     const u = uiCatalogue(root, lang, site.themes);
@@ -635,15 +670,15 @@ function buildStory(p, storyDir, site) {
   }
   fs.rmSync(final, { recursive: true, force: true });
   fs.renameSync(out, final);
-  // harita i18n writes the catalogues of each battle and image folder in that folder
-  const folderI18n = Object.fromEntries([...battleList.map(b => [b.dir, { kind: 'battle', ...b }]), ...imageFolders.map(f => [f.dir, { kind: 'image', ...f }])]
+  // harita i18n writes the catalogues of each battle, image and zone folder in that folder
+  const folderI18n = Object.fromEntries([...battleList.map(b => [b.dir, { kind: 'battle', ...b }]), ...imageFolders.map(f => [f.dir, { kind: 'image', ...f }]), ...zoneFolders.map(f => [f.dir, { kind: 'zone', ...f }])]
     .map(([dir, f]) => [dir, { kind: f.kind, id: f.id, defaultLang: f.defaultLang, langs, entries: [...f.translator.entries.values()] }]));
   return { format: CARD_FORMAT, id: story.id, title: bundle.title, summary, span, languages: langs, defaultLanguage: defaultLang, pages: pages.length, cover, i18n: [...entries.values()], terrain, folderI18n, sharedImages };
 }
 
-// The story folders under content/. content/shared/ holds the battles that stories share.
+// The story folders under content/. content/shared/ holds the battles, images and zones that stories share.
 function storyFolders(p) {
-  if (exists(path.join(p.content, 'shared', 'story.yaml'))) fail('content/shared/story.yaml', 'content/shared/ holds the battles stories share, move this story to a folder of another name');
+  if (exists(path.join(p.content, 'shared', 'story.yaml'))) fail('content/shared/story.yaml', 'content/shared/ holds the battles, images and zones stories share, move this story to a folder of another name');
   if (exists(path.join(p.content, 'shared', 'battles.yaml'))) fail('content/shared/battles.yaml', 'battles live in folders now, one per battle: content/shared/battles/<id>/battle.yaml');
   return listDirs(p.content).filter(d => exists(path.join(p.content, d, 'story.yaml')));
 }
@@ -672,6 +707,13 @@ function buildIndex(p, cards, site) {
   const files = siteFiles({ shell: INDEX.replace('/*__THEMES_CSS__*/', () => css), data, site: site.context, common: COMMON, themeCss: css, ui: notFoundUi });
   for (const [f, text] of Object.entries(files)) writeFile(path.join(p.dist, f), text);
   p.log(`wrote dist/index.html (${data.stories.length} stories)`);
+}
+
+// The families of the zones each page shows, for harita patterns, read as the build reads the story. A page of an
+// included battle counts at the folder of its include.
+export function pageZoneFamilies({ root, storyDir }) {
+  const { pages, zones } = readContent(project(root, () => {}), storyDir);
+  return pages.map(pg => ({ dir: pg.include ?? pg.dir, families: [...new Set(pg.zones.map(z => zones[z].family))] }));
 }
 
 // Every problem in one story's content, without the geometry: the pages, their texts and emblems, and the files
@@ -720,8 +762,28 @@ export function buildPages({ root = process.cwd(), log = console.log, strict = f
   site.defaultLang = site.default_language ?? site.langs[0];
   const codes = new Set([...site.langs, ...metas.flatMap(([, m]) => m.languages)]);
   for (const [s, m] of metas) if (codes.has(m.id)) fail(`content/${s}/story.yaml`, `the story id "${m.id}" is also a language code, and both would be the folder dist/${m.id}/, so give the story another id`);
+  // dist/images/ and dist/terrain/ hold what every story shares
+  for (const [s, m] of metas) if (['images', 'terrain'].includes(m.id)) fail(`content/${s}/story.yaml`, `the story id "${m.id}" names the folder dist/${m.id}/ that holds what every story shares, so give the story another id`);
   site.context = siteContext({ url: site.url, languages: site.langs, defaultLanguage: site.defaultLang });
   if (story) site.stories = [metas.find(([s]) => s === story)[1].id];
+  // every build compares the zones: a pair that looks alike is a warning, and with --strict a copy stops the build
+  {
+    const { pairs, stale, unread } = zonePairs({ root, cache, stories: story ? [story] : only });
+    // a zone file that does not read stops the build of its own story, not of the others
+    for (const line of unread) log(`warning: ${line}, left out of the zone comparison`);
+    const page = path.relative(root, path.join(cache, 'zones.html'));
+    for (const pair of pairs.filter(x => !x.exact || !strict)) log(`warning: ${describePair(pair)}, see ${page}`);
+    for (const line of stale) log(`warning: ${line}`);
+    // the way out of a copy depends on where the two zones are
+    const fix = ({ a, b }) => {
+      const [own, common] = a.story ? [a, b] : [b, a], at = z => `${z.story}/${z.id}`;
+      if (!a.story && !b.story) return `keep one of the shared zones ${a.id} and ${b.id}`;
+      if (!common.story) return `name the shared zone ${common.id} in place of ${at(own)}, or give ${at(own)} a zones.yaml entry { zone: ${common.id} }, and remove its file`;
+      return `harita zones --share ${at(a)} --replace ${at(b)} keeps one outline, and each story its name and family`;
+    };
+    const copies = pairs.filter(x => x.exact);
+    if (strict && copies.length) fail('content/', `zones that copy another one: ${copies.map(c => `${describePair(c)}: ${fix(c)}`).join('. ')}`);
+  }
   writeFile(path.join(p.dist, 'harita.js'), APP_JS);
   const cards = [];
   for (const s of story ? [story] : stories) {
@@ -734,11 +796,13 @@ export function buildPages({ root = process.cwd(), log = console.log, strict = f
     cards.push(card);
   }
   buildIndex(p, cards, site);
-  // dist/images/ keeps the shared images a story shows, the kept stories' from their cached cards
-  const imagesDir = path.join(p.dist, 'images'), shown = new Set(cards.flatMap(c => c.sharedImages));
+  // dist/images/ keeps the shared images a story in dist/ shows: the built ones, and the others from their cached cards
+  const others = story ? stories.filter(s => s !== story).map(lastCard).filter(Boolean) : [];
+  const imagesDir = path.join(p.dist, 'images'), shown = new Set([...cards, ...others].flatMap(c => c.sharedImages ?? []));
   for (const f of exists(imagesDir) ? fs.readdirSync(imagesDir, { recursive: true }).sort().reverse() : []) {
     const full = path.join(imagesDir, f);
-    if (fs.statSync(full).isDirectory() ? !fs.readdirSync(full).length : !shown.has(`images/${f.split(path.sep).join('/')}`)) fs.rmSync(full);
+    if (fs.statSync(full).isDirectory()) { if (!fs.readdirSync(full).length) fs.rmdirSync(full); }
+    else if (!shown.has(`images/${f.split(path.sep).join('/')}`)) fs.rmSync(full);
   }
   const built = cards.filter(c => c.terrain);
   // a folder several stories use has one catalogue: its keys from every story, and the languages of all of them

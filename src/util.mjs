@@ -1,0 +1,10 @@
+// Small helpers the build, harita zones and harita image share.
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+
+export const hash = value => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
+export const listDirs = p => fs.existsSync(p) ? fs.readdirSync(p).filter(d => fs.statSync(path.join(p, d)).isDirectory()).sort() : [];
+// a folder's id: its name without the number that orders it
+export const idOf = name => name.replace(/^\d+-/, '');
+export const boxesMeet = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];

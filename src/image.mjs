@@ -4,11 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import yaml from 'js-yaml';
+import { libraryItems, isImage } from './folders.mjs';
+import { check, ImageFolder } from './schema.mjs';
+import { listDirs } from './util.mjs';
 
 export const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-// a source as a page address, so File%3AA%20b.jpg over http and File:A_b.jpg over https are the same source
-export const sameSource = url => { try { const u = new URL(url); return u.host + decodeURIComponent(u.pathname).replace(/ /g, '_'); } catch { return url; } };
-const dirsIn = d => fs.existsSync(d) ? fs.readdirSync(d).filter(n => fs.statSync(path.join(d, n)).isDirectory()).sort() : [];
+// a source as a page address, so File%3AA%20b.jpg over http and File:A_b.jpg over https are one source, and
+// object.php?id=101 and ?id=202 are two
+const sameSource = url => { try { const u = new URL(url); return u.host + decodeURIComponent(u.pathname).replace(/ /g, '_') + u.search; } catch { return url; } };
 const readMeta = dir => { try { return yaml.load(fs.readFileSync(path.join(dir, 'image.yaml'), 'utf8')) ?? {}; } catch { return {}; } };
 // a field of image.yaml set in place, so the other lines and their comments stay
 function setField(dir, key, value) {
@@ -19,16 +22,17 @@ function setField(dir, key, value) {
 // Every image folder the content holds, with its source and stored sha256.
 export function imageIndex({ root = process.cwd() } = {}) {
   const content = path.join(root, 'content'), index = [];
+  // the image folders of a library, in its groups too
   const folders = (dir, story) => {
-    for (const id of dirsIn(dir)) {
-      const d = path.join(dir, id), f = fs.readdirSync(d).find(f => /^image\.\w+$/.test(f) && f !== 'image.yaml');
+    for (const [id, d] of libraryItems(dir, isImage, p => path.relative(root, p))) {
+      const f = fs.readdirSync(d).find(f => /^image\.\w+$/.test(f) && f !== 'image.yaml');
       if (!f) continue;
       const m = readMeta(d);
-      index.push({ id, story, dir: d, file: path.join(d, f), size: fs.statSync(path.join(d, f)).size, source: m.source ?? null, sha256: m.sha256 ?? null });
+      index.push({ id, story, dir: d, meta: fs.existsSync(path.join(d, 'image.yaml')), file: path.join(d, f), size: fs.statSync(path.join(d, f)).size, source: m.source ?? null, sha256: m.sha256 ?? null });
     }
   };
   folders(path.join(content, 'shared', 'images'), null);
-  for (const s of dirsIn(content).filter(s => fs.existsSync(path.join(content, s, 'story.yaml')))) folders(path.join(content, s, 'shared', 'images'), s);
+  for (const s of listDirs(content).filter(s => fs.existsSync(path.join(content, s, 'story.yaml')))) folders(path.join(content, s, 'shared', 'images'), s);
   return index;
 }
 
@@ -54,15 +58,20 @@ export function image({ root = process.cwd(), file, name, caption, credit = null
   if (!file || !name || !caption) throw new Error('usage: harita image <file> <name> --caption <text> [--credit <text>] [--source <url>] [--story <id>]');
   if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) throw new Error(`"${name}": a name is lowercase letters, digits and dashes, such as hastings-knights`);
   if (!fs.existsSync(file)) throw new Error(`${file}: no such file`);
+  if (!/\.(jpe?g|png|webp|svg|gif)$/i.test(file)) throw new Error(`${file}: an image is a .jpg, .jpeg, .png, .webp, .svg or .gif file`);
   if (story && !fs.existsSync(path.join(root, 'content', story, 'story.yaml'))) throw new Error(`"${story}" is not a story folder under content/`);
+  const content = path.join(root, 'content');
+  if (!fs.existsSync(content) || !fs.readdirSync(content).some(d => fs.existsSync(path.join(content, d, 'story.yaml')))) throw new Error('content/: no story.yaml found, run harita image from a content project');
+  // the fields as image.yaml will hold them, checked before anything is written
+  check(ImageFolder, { caption, ...(credit ? { credit } : {}), ...(source ? { source } : {}) }, '--caption, --credit and --source');
   const rel = p => path.relative(root, p), common = path.join(root, 'content', 'shared', 'images');
-  const hit = findImage(imageIndex({ root }), { source, file });
+  const index = imageIndex({ root }), hit = findImage(index, { source, file });
   if (hit) {
     let dir = hit.dir;
     // a folder of another story moves where both stories see it, and every reference to it keeps working
     if (hit.story && hit.story !== story) {
       dir = path.join(common, hit.id);
-      if (fs.existsSync(dir)) throw new Error(`${rel(hit.dir)} holds this image and ${rel(dir)} exists too, keep one`);
+      if (fs.existsSync(dir) || index.some(i => i.id === hit.id && i.dir !== hit.dir)) throw new Error(`${rel(hit.dir)} holds this image and another folder is named ${hit.id} too, keep one`);
       fs.mkdirSync(common, { recursive: true });
       fs.renameSync(hit.dir, dir);
       log(`moved ${rel(hit.dir)}/ to ${rel(dir)}/, it holds the same ${hit.by === 'source' ? 'source' : 'file'}`);
@@ -73,7 +82,8 @@ export function image({ root = process.cwd(), file, name, caption, credit = null
   }
   const base = story ? path.join(root, 'content', story, 'shared', 'images') : common;
   let id;
-  do id = `${name}-${crypto.randomBytes(3).toString('hex')}`; while (fs.existsSync(path.join(base, id)));
+  // a fresh suffix, unused in every library and group
+  do id = `${name}-${crypto.randomBytes(3).toString('hex')}`; while (index.some(i => i.id === id));
   const dir = path.join(base, id);
   fs.mkdirSync(dir, { recursive: true });
   fs.copyFileSync(file, path.join(dir, 'image' + path.extname(file).toLowerCase()));
@@ -92,6 +102,7 @@ export function image({ root = process.cwd(), file, name, caption, credit = null
 export function rehash({ root = process.cwd(), log = console.log } = {}) {
   const written = [];
   for (const i of imageIndex({ root })) {
+    if (!i.meta) { log(`${path.relative(root, i.dir)}: image.yaml is missing`); continue; }
     const hash = sha256(i.file);
     if (i.sha256 === hash) continue;
     setField(i.dir, 'sha256', hash);

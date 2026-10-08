@@ -3,8 +3,8 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
-import { check, Story, Page, Zone, Include } from './schema.mjs';
-import { battleDirs } from './folders.mjs';
+import { check, Story } from './schema.mjs';
+import { pageZoneFamilies } from './build.mjs';
 
 const PATTERNS = ['hatch', 'cross', 'dots'];
 // CIELAB distance; at the 0.38 fill opacity the zones use, pairs under 30 were hard to tell apart in practice
@@ -39,34 +39,6 @@ export function alikePairs(families, pages) {
 export const describe = f => `families "${f.a}" and "${f.b}" look alike on ${f.dir}: colour distance ${f.distance}, both ${f.pattern}.`
   + (f.suggestion ? ` Give "${f.fix}" pattern: ${f.suggestion}, or run harita patterns --fix.` : ' All three patterns are taken on its pages, change a colour.');
 
-// A light walk of one story: which families each page shows. Each page of an included battle shows the zones its
-// include.yaml lists. No geometry is touched.
-function pageFamilies(root, storyDir) {
-  const dirs = dir => fs.existsSync(dir) ? fs.readdirSync(dir).filter(d => fs.statSync(path.join(dir, d)).isDirectory()).sort().map(d => path.join(dir, d)) : [];
-  const read = (file, schema) => check(schema, yaml.load(fs.readFileSync(file, 'utf8')), path.relative(root, file));
-  const battlePages = dir => dirs(dir).flatMap(d => fs.existsSync(path.join(d, 'page.yaml')) ? [d] : battlePages(d));
-  const walk = dir => dirs(dir).flatMap(d => {
-    if (fs.existsSync(path.join(d, 'page.yaml'))) return [{ dir: d, zones: read(path.join(d, 'page.yaml'), Page).zones }];
-    const inc = path.join(d, 'include.yaml');
-    if (!fs.existsSync(inc)) return walk(d);
-    const { battle, zones } = read(inc, Include);
-    const found = battleDirs(path.join(root, 'content'), storyDir, battle);
-    if (found.length !== 1) throw new Error(`${path.relative(root, inc)}: ${found.length ? `battle "${battle}" is in both ${found.map(f => path.relative(root, f)).join(' and ')}, keep one` : `unknown battle "${battle}"`}`);
-    return battlePages(path.join(found[0], 'pages')).map(() => ({ dir: d, zones }));
-  });
-  const pages = walk(path.join(storyDir, 'pages'));
-  const family = {};
-  for (const dir of [path.join(storyDir, 'shared'), ...pages.filter(pg => fs.existsSync(path.join(pg.dir, 'page.yaml'))).map(pg => pg.dir)]) {
-    const zdir = path.join(dir, 'zones');
-    if (!fs.existsSync(zdir)) continue;
-    for (const f of fs.readdirSync(zdir).filter(f => f.endsWith('.geojson'))) {
-      const feat = check(Zone, JSON.parse(fs.readFileSync(path.join(zdir, f), 'utf8')), path.join(zdir, f));
-      family[feat.properties.id ?? f.replace(/^\d+-/, '').replace('.geojson', '')] = feat.properties.family;
-    }
-  }
-  return pages.map(({ dir, zones }) => ({ dir: path.relative(root, dir), families: [...new Set(zones.map(z => family[z] ?? (() => { throw new Error(`${path.relative(root, dir)}: unknown zone "${z}"`); })()))] }));
-}
-
 // Insert "pattern: x" into the family's flow-style line in story.yaml, keeping comments and layout.
 function writePattern(root, file, name, pattern) {
   const lines = fs.readFileSync(file, 'utf8').split('\n');
@@ -87,7 +59,8 @@ export function patterns({ root = process.cwd(), fix = false, log = console.log 
     const dir = path.join(content, id), file = path.join(dir, 'story.yaml');
     for (let round = 0; round < 20; round++) {
       const story = check(Story, yaml.load(fs.readFileSync(file, 'utf8')), path.relative(root, file));
-      const pairs = alikePairs(story.families, pageFamilies(root, dir));
+      // the families each page shows, read as the build reads the story, battles and shared zones included
+      const pairs = alikePairs(story.families, pageZoneFamilies({ root, storyDir: dir }));
       if (!pairs.length) { if (!round) log(`${id}: every page's families differ in colour or pattern`); break; }
       const f = fix ? pairs.find(f => f.suggestion) : null;
       if (!f) { pairs.forEach(f => { log(`${id}: ${describe(f)}`); left.push({ story: id, ...f }); }); break; }

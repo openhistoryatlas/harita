@@ -26,8 +26,8 @@ Add to `package.json`:
 
 Then create `content/` as described below, and add `.cache/` to `.gitignore`. `npm run build` writes
 `dist/`: the main page listing the stories, each story's pages under `dist/<story>/`, the story data in
-`dist/<story>/story.js`, the script all story pages share in `dist/harita.js`, the images every story can show
-in `dist/images/`, and the elevation tiles in `dist/terrain/`. `dist/404.html` answers unknown paths on GitHub
+`dist/<story>/story.js`, the script all story pages share in `dist/harita.js`, the images from `content/shared/`
+that a story shows in `dist/images/`, and the elevation tiles in `dist/terrain/`. `dist/404.html` answers unknown paths on GitHub
 Pages and links back to the main page. Links are relative, so `dist/` works from `npm run dev` and from any
 static host or subpath. Opened as a file, a story shows its map without the relief.
 
@@ -96,7 +96,7 @@ to the working directory, and a `log` function for progress lines, which default
 problem in the content throws an `Error` whose message names the file and the field.
 
 ```js
-import { build, check, dev, i18n, image, findImage, imageIndex, rehash, patterns, schema } from '@openhistoryatlas/harita';
+import { build, check, dev, i18n, image, findImage, imageIndex, rehash, zones, patterns, schema } from '@openhistoryatlas/harita';
 
 const { dist, stories } = await build({ root }); // writes root/dist with the elevation tiles, one card per story
 await build({ root, only: ['my-story'] });       // that story and the main page, the others as they were
@@ -106,6 +106,7 @@ i18n({ root, lang: 'tr' });                     // writes the catalogues for one
 const id = image({ root, file, name: 'farm', caption: 'The farm', source }); // the image folder for a file, see Images
 const held = findImage(imageIndex({ root }), { source, file }); // the image folder that holds it already, or null
 rehash({ root });                               // writes each image folder's sha256 into its image.yaml
+const pairs = zones({ root });                  // the zones of different stories that look like one region
 const alike = patterns({ root, fix: false });   // the family pairs that look alike, [] when none
 schema.check(schema.Page, data, 'page.yaml');   // the zod schema of every content file
 ```
@@ -127,6 +128,7 @@ site.yaml                   main page title and intro, languages, story order; o
 content/
   shared/battles/<id>/      a battle any story can include, see Battles
   shared/images/<id>/       an image any story or battle can show, see Images
+  shared/zones/<id>/        a zone any story can show, see Shared zones
   <story>/
     story.yaml              title, languages, map extent, countries, land, zone families
     shared/
@@ -155,6 +157,11 @@ Leave gaps in the numbers, 010, 020, so a page can be inserted later.
 
 Ids are global within a story and come from the folder name without its prefix. A zone, route or marker
 defined in any page is visible to every page. The ids in a battle folder belong to the battle.
+
+Battle, image and zone folders can sit in groups, folders that only order a library, at any depth:
+`content/shared/battles/ottoman/1402/ankara-1402/`. A folder that holds its `battle.yaml`, `image.yaml` or
+`zone.geojson` is the item and gives the id, and an id stays unique across the groups of a library. A story's
+`zones/` folders take subfolders for their zone files the same way.
 
 Every file is checked against a schema in `src/schema.mjs` before use. The build stops on the first bad
 file and lists each problem with its field path, for example `bbox: Too small: expected array to have
@@ -187,8 +194,8 @@ of the main page, so it differs from every language code.
 ### Languages
 
 Content strings are English inline. Every other language lives in one catalogue per story,
-`content/<story>/i18n/<lang>.yaml`, one per battle and image folder, and one for the site, `i18n/<lang>.yaml`, keyed by
-the stable ids the content already has:
+`content/<story>/i18n/<lang>.yaml`, one per battle, image and zone folder, and one for the site, `i18n/<lang>.yaml`,
+keyed by the stable ids the content already has:
 
 ```yaml
 # Occupation, and the landing at Samsun
@@ -219,8 +226,9 @@ harita i18n <lang>
 ```
 
 which writes or refreshes the catalogues with every key, the English source as a comment above each, and
-existing translations kept. `harita i18n <lang> --story <id>` refreshes that story's catalogue alone and builds
-only that story to collect its strings, so a half edited story elsewhere leaves it working. Keys that no
+existing translations kept. `harita i18n <lang> --story <id>` refreshes the catalogues of that story and of the
+battle, image and zone folders it uses, and builds only that story to collect its strings, so a half edited story
+elsewhere leaves it working. Keys that no
 longer exist move to a commented block at the end. A missing
 value falls back to English; the build prints the coverage per language, and `harita build --strict`
 fails on any gap. Names (marker labels and battle commanders), citations and photo credits show as written
@@ -389,6 +397,63 @@ Drawing rules that follow from this:
   drawn with.
 - The build fails when a zone is left with land outside the clip or overlaps another family by more
   than 1 km². It lists pieces under 50 km² so a stray sliver is visible next to the real islands.
+
+### Shared zones
+
+A zone several stories show, such as the Ottoman lands of 1402 in the stories of Bayezid I and of Timur, lives in
+`content/shared/zones/<id>/` and is drawn once:
+
+```
+content/shared/zones/ottoman-1402/
+  zone.geojson         the zone as above, without an id: the folder name is the id
+  i18n/<lang>.yaml     the name in other languages, key zone.name
+```
+
+A page or an `include.yaml` names it by id, as a zone of the story. Its `family` is the story's family of that id
+or alias, see [Battles](#battles), and its `clip` countries are the story's. The story trims and rounds it with its
+own zones, so each story draws it to fit. `default_language` in its properties gives the language of its name, en
+by default. End the id with the year, as for battles.
+
+A story that shows the outline of a zone under its own name or in its own family writes a `zones.yaml`, in
+`shared/` or a page folder, as it writes a `markers.yaml`:
+
+```yaml
+# content/viking-age/shared/zones.yaml
+sicily-970:  { zone: sicily, name: Emirate of Sicily, family: islam }
+sicily-1066: { zone: sicily-970, name: Norman Sicily }   # the outline of a zone of the story, its family too
+```
+
+Each entry is a zone of the story with its own id. `zone` names the zone whose outline it takes, of the story or
+shared. `name` and `family` replace that zone's where they are given, so the colour and the pattern come from the
+family the story chose. The name is the story's text, translated in its catalogue as `zones.<id>.name`. The entry
+is cut to the countries of its own `clip`, else to the story's land, whatever the clip of the zone it names.
+
+`harita zones` finds the zones of different stories that look like one region. Names can mislead, and two hands
+draw one border with different points, so it compares land: each zone cut to the Natural Earth land it covers, at
+1:50m, then the land both cover over the land either covers. It prints the pairs at 90% or more, the same land from
+98%, a copy of the same drawing found by a hash of its points, the widest gap between the two borders in km and
+where it is. It writes `.cache/harita/zones.html` to look at them, the two zones over the land with the gap marked.
+
+```
+harita zones                            # every pair of zones of two stories, or of a story and content/shared/zones/
+harita zones --same-story               # pairs within one story too, where dated shapes of a family overlap on purpose
+harita zones --like new.geojson         # the zones a zone about to be added looks like
+harita zones --share timur/ottoman-1402 --replace rise-of-the-ottomans/ottoman-lands-1402
+harita zones --apart napoleonic-wars/sicily-1799 viking-age/sicily-970 --why "the Bourbon kingdom, the emirate"
+```
+
+`--share` moves a story's zone into `content/shared/zones/` with its translated name, and the story's pages name it
+as before. Each `--replace` zone of another story takes the shared outline through a `zones.yaml` entry beside it
+that keeps its id, name and family, so its pages and catalogue stay as they were.
+
+Two zones that cover the same land and stay apart, two states on one island, go into
+`content/shared/zones/apart.yaml` with `--apart` and the reason. The list keeps both drawings' hashes, so a pair
+comes back when either zone is redrawn, and an entry whose zone is gone is reported. A copy cannot be kept apart:
+one outline under two names is `--share` with `zones.yaml`.
+
+Every build runs the same comparison: it warns about the pairs, the pairs kept apart left out, and writes
+`.cache/harita/zones.html`. `harita build --strict` stops on a zone that copies another one. The land cuts and the
+overlaps are kept in `.cache/harita/` by the drawings they come from, so a build measures only the zones that changed.
 
 ### Routes
 

@@ -37,7 +37,7 @@ export function translator({ langs, defaultLang, catalogues, where, fail }) {
   function tr(value, key, { shared = false } = {}) {
     const inline = typeof value === 'object' && value !== null ? value : null;
     const source = inline ? inline[defaultLang] : value;
-    if (source == null) fail(where, `${key}: no "${defaultLang}" text`);
+    if (source == null) fail(where, `${key}: no "${defaultLang}" text, write it in ${defaultLang} or set default_language to the language it is in`);
     const out = {};
     for (const lang of langs) {
       const text = inline?.[lang] ?? catalogues[lang]?.[key] ?? (lang === defaultLang ? source : null);

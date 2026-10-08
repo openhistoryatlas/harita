@@ -75,3 +75,20 @@ test('image writes a story image folder and prints its name, or the usage when t
   assert.match(run(root, 'rehash').stdout, /^wrote the sha256 of 0 image folders\n$/);
   assert.match(run(root, 'image', 'farm.png', 'farm').stderr, /^error: usage: harita image <file> <name> --caption <text>/);
 });
+
+test('zones prints the pairs it finds and where the review page is', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-cli-'));
+  fs.cpSync(EXAMPLE, root, { recursive: true });
+  const r = run(root, 'zones');
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, 'no pairs, see .cache/harita/zones.html\n');
+  assert.ok(fs.existsSync(path.join(root, '.cache/harita/zones.html')));
+});
+
+test('zones refuses a zone id without its own --replace', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-cli-'));
+  fs.cpSync(EXAMPLE, root, { recursive: true });
+  const r = run(root, 'zones', '--share', 'a/x', '--replace', 'b/y', 'c/z');
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /^harita zones takes no zone ids here: write --replace before each one/);
+});

@@ -2,7 +2,7 @@
 // the battle line, and writes the result into the battle's pages.
 //
 //   import { frame, planWriter } from '@openhistoryatlas/harita/plans';
-//   const writePlan = planWriter('content/punic-wars');   // bound to one story folder
+//   const writePlan = planWriter('content/punic-wars');   // bound to one story folder, or one battle folder
 //   const f = frame([16.133, 41.297], 330);   // origin [lon, lat]; u runs along bearing 330, w along 330 + 90
 //   f.p(1800, -500)                           // -> [lon, lat] of the point u = 1800 m, w = -500 m
 //   f.face(90)                                // -> compass bearing of the +w direction, for a unit's facing

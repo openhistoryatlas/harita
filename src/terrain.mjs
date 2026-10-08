@@ -39,9 +39,8 @@ export const openZoom = ([w, s, e, n]) => Math.min(Math.log2(VIEW[0] / ((e - w) 
 // The tile zoom a page needs: its opening zoom plus one, for 256 px tiles, and at most one above the map's maxZoom.
 export const pageZoom = (bbox, maxZoom = 11) => Math.min(SOURCE_ZOOM, maxZoom + 1, Math.round(openZoom(bbox) + 1));
 
-// The tiles of one story: the extent from zoom 0 to BASE_ZOOM, then each { bbox, maxZoom } page's padded bbox at the
-// zooms above BASE_ZOOM it opens at. ranges maps a zoom to its [x0, y0, x1, y1] blocks, which the map also uses to
-// ask only for tiles that exist and to draw a parent tile in place of a missing one.
+// The tiles of one story: the extent to BASE_ZOOM, then each { bbox, maxZoom } page's padded bbox at the zooms it opens
+// at. ranges maps a zoom to [x0, y0, x1, y1] blocks, which the map uses to ask only for tiles that exist.
 export function terrainPlan(extent, pages) {
   const ranges = {};
   const add = (z, r) => { const list = ranges[z] ??= []; if (!list.some(q => q.every((v, i) => v === r[i]))) list.push(r); };

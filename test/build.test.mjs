@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { PNG } from 'pngjs';
 import * as turf from '@turf/turf';
-import { build, check, i18n, image, patterns, rehash, schema } from '../src/index.mjs';
+import { build, check, i18n, image, patterns, rehash, schema, zones } from '../src/index.mjs';
 import { cut, terrainPlan, BASE_ZOOM } from '../src/terrain.mjs';
 import { describe } from '../src/pages.mjs';
 import * as tc from 'topojson-client';
@@ -864,7 +864,7 @@ test('a battle folder or an include used the wrong way stops the build, naming t
   const write = (root, file, text) => { fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true }); fs.writeFileSync(path.join(root, file), text); };
   const cases = [
     [root => write(root, `${STORY}/shared/battles.yaml`, 'x: {}\n'), /settlement-of-iceland\/shared\/battles\.yaml: battles live in folders now, one per battle/],
-    [root => fs.copyFileSync(path.join(root, STORY, 'story.yaml'), path.join(root, 'content/shared/story.yaml')), /content\/shared\/story\.yaml: content\/shared\/ holds the battles stories share/],
+    [root => fs.copyFileSync(path.join(root, STORY, 'story.yaml'), path.join(root, 'content/shared/story.yaml')), /content\/shared\/story\.yaml: content\/shared\/ holds the battles, images and zones stories share/],
     [root => edit(root, INCLUDE, 'battle: althing-1012', 'battle: althing-1013'), /040-althing-battle\/include\.yaml: unknown battle "althing-1013", add content\/settlement-of-iceland\/shared\/battles\/althing-1013\/battle\.yaml or content\/shared\/battles\/althing-1013\/battle\.yaml/],
     [root => append(root, `${STORY}/pages/010-landnam/page.yaml`, 'battle: nowhere-900'), /010-landnam\/page\.yaml: unknown battle "nowhere-900"/],
     [root => fs.cpSync(path.join(root, BATTLE), path.join(root, STORY, 'shared/battles/althing-1012'), { recursive: true }), /battle "althing-1012" is in both content\/settlement-of-iceland\/shared\/battles\/althing-1012 and content\/shared\/battles\/althing-1012, keep one/],
@@ -894,4 +894,310 @@ test('a battle folder or an include used the wrong way stops the build, naming t
     breakIt(root);
     await assert.rejects(make(root), message);
   }
+});
+
+// --- shared zones, and the zones of different stories that look like one region ---
+const ISLAND = `${STORY}/pages/020-althing/zones/island.geojson`;
+// a second story, a copy of the example under another id
+function secondStory(root) {
+  fs.cpSync(path.join(root, STORY), path.join(root, 'content/second-story'), { recursive: true });
+  edit(root, 'content/second-story/story.yaml', 'id: settlement-of-iceland', 'id: second-story');
+}
+// every coordinate of a zone file moved a little, as another hand would draw it
+const redraw = (root, file, d = 0.002) => { const z = JSON.parse(fs.readFileSync(path.join(root, file), 'utf8')); z.geometry.coordinates = z.geometry.coordinates.map(r => r.map(([x, y], i) => [x + (i % 2 ? d : -d), y + d])); fs.writeFileSync(path.join(root, file), JSON.stringify(z)); };
+
+test("a shared zone shows in every story that names it, in the story's family by id or alias", async () => {
+  const root = copy(), shared = 'content/shared/zones/island-930';
+  const island = JSON.parse(fs.readFileSync(path.join(root, ISLAND), 'utf8'));
+  fs.mkdirSync(path.join(root, shared), { recursive: true });
+  fs.writeFileSync(path.join(root, shared, 'zone.geojson'), JSON.stringify({ ...island, properties: { family: 'settlers', name: 'The settled island', clip: ['Iceland'] } }));
+  fs.rmSync(path.join(root, ISLAND));
+  for (const page of ['020-althing', '030-kristnitaka']) edit(root, `${STORY}/pages/${page}/page.yaml`, 'zones: [island]', 'zones: [island-930]');
+  await assert.rejects(make(root), /island-930\/zone\.geojson: family "settlers" is not in content\/settlement-of-iceland\/story\.yaml, give a family there the id or alias "settlers"/);
+  edit(root, `${STORY}/story.yaml`, 'color_dark: "#6fa3d6" }', 'color_dark: "#6fa3d6", aliases: [settlers] }');
+  addLanguage(root, 'tr');
+  const lines = [];
+  await make(root, { log: l => lines.push(l) });
+  const B = bundleOf(root);
+  assert.equal(B.zones['island-930'].family, 'settled');
+  assert.ok(zoneGeometry(B, 'island-930'), 'the story cleans the shared zone with its own');
+  assert.ok(lines.includes('  zone folders tr: 0 of 1 strings translated, 1 missing (harita i18n tr)'));
+  i18n({ root, lang: 'tr', log: quiet });
+  assert.match(fs.readFileSync(path.join(root, shared, 'i18n/tr.yaml'), 'utf8'), /^zone\.name: ""$/m);
+  // the same id in the story and in content/shared/zones/ is one too many
+  fs.mkdirSync(path.join(root, STORY, 'shared/zones'), { recursive: true });
+  fs.writeFileSync(path.join(root, STORY, 'shared/zones/island-930.geojson'), JSON.stringify(island).replace('"id":"island"', '"id":"island-930"'));
+  await assert.rejects(make(root), /zone "island-930" is in content\/settlement-of-iceland\/shared and in content\/shared\/zones\/island-930, keep one/);
+});
+
+test('harita zones finds copies and near copies across stories, and the review page shows them', async () => {
+  const root = copy();
+  secondStory(root);
+  let pairs = zones({ root, log: quiet });
+  // the second story copies both zones: one map read finds each copy
+  assert.deepEqual(pairs.map(p => p.a.id).sort(), ['island', 'southwest']);
+  // a plain build warns about the copies and writes the review page, a strict one stops
+  const plain = [];
+  fs.rmSync(path.join(root, '.cache/harita/zones.html'));
+  await make(root, { log: l => plain.push(l) });
+  assert.ok(plain.some(l => /^warning: second-story\/island ~ settlement-of-iceland\/island  the same drawing/.test(l)) && fs.existsSync(path.join(CACHE, 'zones.html')));
+  assert.deepEqual(pairs.map(p => p.exact), [true, true]);
+  await assert.rejects(make(root, { strict: true }), /zones that copy another one: second-story\/(island|southwest) ~ settlement-of-iceland\/\1  the same drawing, families settled \/ settled: harita zones --share second-story\/\1 --replace settlement-of-iceland\/\1 keeps one outline/);
+  // redrawn by another hand they cover the same land, which is a warning
+  for (const f of ['pages/020-althing/zones/island.geojson', 'pages/010-landnam/zones/southwest.geojson']) redraw(root, `content/second-story/${f}`);
+  pairs = zones({ root, log: quiet });
+  assert.ok(pairs.length === 2 && pairs.every(p => !p.exact && p.overlap >= 0.98), JSON.stringify(pairs.map(p => [p.a.id, p.overlap])));
+  const lines = [];
+  await make(root, { strict: true, log: l => lines.push(l) });
+  assert.ok(lines.some(l => /^warning: second-story\/island ~ settlement-of-iceland\/island  \d+% overlap, the same land.*, families settled \/ settled, see .*zones\.html$/.test(l)), lines.filter(l => l.startsWith('warning')).join('\n'));
+  const page = fs.readFileSync(path.join(root, '.cache/harita/zones.html'), 'utf8');
+  assert.ok(page.includes('second-story/island') && page.includes('maplibre-gl'));
+  // inside one story, dated shapes of a family overlap on purpose: those pairs show on request only
+  fs.copyFileSync(path.join(root, ISLAND), path.join(root, `${STORY}/pages/030-kristnitaka/zones-copy.geojson`));
+  fs.mkdirSync(path.join(root, `${STORY}/pages/030-kristnitaka/zones`));
+  fs.renameSync(path.join(root, `${STORY}/pages/030-kristnitaka/zones-copy.geojson`), path.join(root, `${STORY}/pages/030-kristnitaka/zones/island-1000.geojson`));
+  edit(root, `${STORY}/pages/030-kristnitaka/zones/island-1000.geojson`, '"id": "island"', '"id": "island-1000"');
+  assert.ok(!zones({ root, log: quiet }).some(p => p.a.story === p.b.story));
+  assert.ok(zones({ root, sameStory: true, log: quiet }).some(p => p.a.story === STORY.split('/')[1] && p.b.story === p.a.story && p.exact));
+  // a zone about to be added, against what the content holds
+  fs.copyFileSync(path.join(root, ISLAND), path.join(root, 'new.geojson'));
+  redraw(root, 'new.geojson', 0.003);
+  assert.deepEqual(zones({ root, like: path.join(root, 'new.geojson'), log: quiet }).map(p => `${p.b.story}/${p.b.id}`).sort(), ['second-story/island', 'settlement-of-iceland/island', 'settlement-of-iceland/island-1000']);
+});
+
+test("harita zones --share makes a shared zone, and a replaced zone keeps its id, name and family in zones.yaml", async () => {
+  const root = copy();
+  secondStory(root);
+  // the second story drew its own island under another id
+  const own = 'content/second-story/pages/020-althing/zones';
+  fs.renameSync(path.join(root, own, 'island.geojson'), path.join(root, own, 'iceland.geojson'));
+  edit(root, `${own}/iceland.geojson`, '"id": "island"', '"id": "iceland"');
+  edit(root, `${own}/iceland.geojson`, '"en": "The settled island"', '"en": "Iceland of the second story"');
+  redraw(root, `${own}/iceland.geojson`);
+  for (const page of ['020-althing', '030-kristnitaka']) edit(root, `content/second-story/pages/${page}/page.yaml`, 'zones: [island]', 'zones: [iceland]');
+  fs.mkdirSync(path.join(root, STORY, 'i18n'));
+  fs.writeFileSync(path.join(root, STORY, 'i18n/tr.yaml'), '# The settled island\nzones.island.name: "Yerleşilen ada"\n\n# other\nmarkers.reykjavik.note: "x"\n');
+  const lines = [];
+  zones({ root, share: 'settlement-of-iceland/island', replace: ['second-story/iceland'], log: l => lines.push(l) });
+  assert.deepEqual(lines, ['moved content/settlement-of-iceland/pages/020-althing/zones/island.geojson to content/shared/zones/island/zone.geojson',
+    'second-story/iceland takes its outline from island, in content/second-story/pages/020-althing/zones.yaml']);
+  assert.ok(!fs.existsSync(path.join(root, ISLAND)) && !fs.existsSync(path.join(root, own, 'iceland.geojson')));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'content/shared/zones/island/zone.geojson'), 'utf8')).properties.id, undefined);
+  assert.match(fs.readFileSync(path.join(root, 'content/shared/zones/island/i18n/tr.yaml'), 'utf8'), /^zone\.name: "Yerleşilen ada"$/m);
+  assert.equal(fs.readFileSync(path.join(root, STORY, 'i18n/tr.yaml'), 'utf8'), '# other\nmarkers.reykjavik.note: "x"\n');
+  assert.match(fs.readFileSync(path.join(root, 'content/second-story/pages/020-althing/zones.yaml'), 'utf8'), /^iceland: \{zone: island, name: \{en: Iceland of the second story\}, family: settled, clip: \[Iceland\]\}$/m);
+  assert.match(fs.readFileSync(path.join(root, 'content/second-story/pages/030-kristnitaka/page.yaml'), 'utf8'), /^zones: \[iceland\]$/m);
+  await make(root);
+  assert.equal(bundleOf(root).zones.island.name.en, 'The settled island');
+  assert.deepEqual(bundleOf(root, 'second-story').zones.iceland, { family: 'settled', name: { en: 'Iceland of the second story' }, area: bundleOf(root, 'second-story').zones.iceland.area });
+  // both outlines are one now, so nothing looks alike
+  assert.deepEqual(zones({ root, log: quiet }).filter(p => p.a.id === 'island' || p.b.id === 'island'), []);
+});
+
+test('zones.yaml gives a zone the outline of another, shared or of the story, with a name and family of its own', async () => {
+  const root = copy(), shared = 'content/shared/zones/iceland-island';
+  const island = JSON.parse(fs.readFileSync(path.join(root, ISLAND), 'utf8'));
+  fs.mkdirSync(path.join(root, shared), { recursive: true });
+  fs.writeFileSync(path.join(root, shared, 'zone.geojson'), JSON.stringify({ ...island, properties: { family: 'land', name: 'Iceland', clip: ['Iceland'] } }));
+  edit(root, `${STORY}/story.yaml`, 'smoothing: 4', '  church: { priority: 1, color: "#7a3b9a", pattern: hatch }\nsmoothing: 4');
+  fs.writeFileSync(path.join(root, STORY, 'shared/zones.yaml'),
+    'church-1000: { zone: iceland-island, family: church, name: { en: Church lands } }\nisland-1000: { zone: island, name: { en: The island in 1000 } }\n');
+  edit(root, `${STORY}/pages/020-althing/page.yaml`, 'zones: [island]', 'zones: [island-1000]');
+  edit(root, `${STORY}/pages/030-kristnitaka/page.yaml`, 'zones: [island]', 'zones: [church-1000]');
+  addLanguage(root, 'tr');
+  await make(root);
+  const B = bundleOf(root);
+  assert.deepEqual([B.zones['church-1000'].family, B.zones['church-1000'].name.en, B.zones['island-1000'].family, B.zones['island-1000'].name.en],
+    ['church', 'Church lands', 'settled', 'The island in 1000']);
+  // the story's own names go to its catalogue, the shared zone's name is not shown and counts in its folder
+  i18n({ root, lang: 'tr', log: quiet });
+  assert.match(fs.readFileSync(path.join(root, STORY, 'i18n/tr.yaml'), 'utf8'), /^zones\.church-1000\.name: ""$/m);
+  const cases = [
+    ['church-1000: { zone: nowhere }\n', /shared\/zones\.yaml: unknown zone "nowhere"/],
+    ['a: { zone: b }\nb: { zone: a }\n', /zone "a" takes its outline from itself, through a, b/],
+    ['church-1000: { zone: island, family: clergy }\n', /zone "church-1000" uses unknown family "clergy"/],
+    ['church-1000: { zone: iceland-island }\n', /iceland-island\/zone\.geojson: family "land" is not in .*story\.yaml, give a family there the id or alias "land", or the zone a family of the story in zones\.yaml/],
+  ];
+  for (const [text, message] of cases) {
+    fs.writeFileSync(path.join(root, STORY, 'shared/zones.yaml'), text);
+    await assert.rejects(make(root), message);
+  }
+});
+
+test('a pair kept apart stops warning until either zone is redrawn, and a copy cannot be kept apart', async () => {
+  const root = copy();
+  secondStory(root);
+  redraw(root, 'content/second-story/pages/020-althing/zones/island.geojson');
+  redraw(root, 'content/second-story/pages/010-landnam/zones/southwest.geojson');
+  const lines = [];
+  zones({ root, apart: ['second-story/island', 'settlement-of-iceland/island'], why: 'two states on one island', log: l => lines.push(l) });
+  assert.deepEqual(lines, ['kept second-story/island and settlement-of-iceland/island apart in content/shared/zones/apart.yaml']);
+  const all = [];
+  assert.deepEqual(zones({ root, log: l => all.push(l) }).map(p => p.a.id), ['southwest']);
+  assert.match(all.at(-1), /^1 pair, 1 kept apart, see /);
+  const strict = [];
+  await make(root, { strict: true, log: l => strict.push(l) });
+  assert.ok(!strict.some(l => l.includes('island ~')) && strict.some(l => l.includes('southwest ~')));
+  // a new drawing brings the pair back
+  redraw(root, 'content/second-story/pages/020-althing/zones/island.geojson', 0.001);
+  assert.ok(zones({ root, log: quiet }).some(p => p.a.id === 'island' && p.redrawn));
+  // an entry whose zone is gone is reported
+  fs.rmSync(path.join(root, 'content/second-story/pages/020-althing/zones/island.geojson'));
+  const gone = [];
+  zones({ root, log: l => gone.push(l) });
+  assert.ok(gone.includes('content/shared/zones/apart.yaml: second-story/island ~ settlement-of-iceland/island names a zone that is gone, remove the entry'));
+  // copies share one outline instead
+  fs.copyFileSync(path.join(root, `${STORY}/pages/010-landnam/zones/southwest.geojson`), path.join(root, 'content/second-story/pages/010-landnam/zones/southwest.geojson'));
+  assert.throws(() => zones({ root, apart: ['second-story/southwest', 'settlement-of-iceland/southwest'], why: 'x', log: quiet }), /are the same drawing: harita zones --share second-story\/southwest --replace settlement-of-iceland\/southwest keeps one outline/);
+});
+
+test('battles, images and zones sit in groups of folders at any depth, which only order them', async () => {
+  const root = copy(), group = (from, to) => { fs.mkdirSync(path.dirname(path.join(root, to)), { recursive: true }); fs.renameSync(path.join(root, from), path.join(root, to)); };
+  group(BATTLE, 'content/shared/battles/iceland/11th-century/althing-1012');
+  const farm = image({ root, file: svgFile(root, 'farm'), name: 'farm', caption: 'The farm', story: 'settlement-of-iceland', log: quiet });
+  group(`${STORY}/shared/images/${farm}`, `${STORY}/shared/images/farms/${farm}`);
+  append(root, `${STORY}/pages/010-landnam/text/en.md`, `@image ${farm}`);
+  // a story's zone files in a subfolder of zones/, and a shared zone in a group
+  group(ISLAND, `${STORY}/pages/020-althing/zones/whole/island.geojson`);
+  const island = JSON.parse(fs.readFileSync(path.join(root, `${STORY}/pages/020-althing/zones/whole/island.geojson`), 'utf8'));
+  fs.mkdirSync(path.join(root, 'content/shared/zones/north/iceland-930'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'content/shared/zones/north/iceland-930/zone.geojson'), JSON.stringify({ ...island, properties: { family: 'settled', name: 'Iceland', clip: ['Iceland'] } }));
+  edit(root, `${STORY}/pages/030-kristnitaka/page.yaml`, 'zones: [island]', 'zones: [iceland-930]');
+  await make(root);
+  const B = bundleOf(root);
+  assert.ok(B.pages.some(p => p.id === 'althing-1012-fight') && B.images[farm] && B.zones.island && B.zones['iceland-930']);
+  assert.ok(fs.existsSync(path.join(root, `dist/settlement-of-iceland/images/${farm}.svg`)));
+  // harita image and harita zones look in the groups too
+  assert.equal(image({ root, file: svgFile(root, 'farm'), name: 'farm', caption: 'x', story: 'settlement-of-iceland', log: quiet }), farm);
+  assert.deepEqual(zones({ root, log: quiet }).map(p => [p.a.id, p.b.id].sort()), [['iceland-930', 'island']]);
+  // one name in two groups
+  fs.cpSync(path.join(root, 'content/shared/battles/iceland/11th-century/althing-1012'), path.join(root, 'content/shared/battles/elsewhere/althing-1012'), { recursive: true });
+  await assert.rejects(make(root), /content\/shared\/battles: content\/shared\/battles\/elsewhere\/althing-1012 and content\/shared\/battles\/iceland\/11th-century\/althing-1012 have one name, rename one/);
+});
+
+// --- what the 0.4.0 review found ---
+test('--share checks everything before it writes, refuses a clash, and writes zones.yaml beside the zones/ folder', async () => {
+  const root = copy();
+  secondStory(root);
+  const own = 'content/second-story/pages/020-althing/zones';
+  fs.mkdirSync(path.join(root, own, 'whole'));
+  fs.renameSync(path.join(root, own, 'island.geojson'), path.join(root, own, 'whole/iceland.geojson'));
+  edit(root, `${own}/whole/iceland.geojson`, '"id": "island"', '"id": "iceland"');
+  for (const page of ['020-althing', '030-kristnitaka']) edit(root, `content/second-story/pages/${page}/page.yaml`, 'zones: [island]', 'zones: [iceland]');
+  // a mistyped replace changes nothing
+  assert.throws(() => zones({ root, share: 'settlement-of-iceland/island', replace: ['second-story/islnd'], log: quiet }), /no zone second-story\/islnd/);
+  assert.ok(fs.existsSync(path.join(root, ISLAND)) && !fs.existsSync(path.join(root, 'content/shared/zones/island')));
+  // a third story that draws its own island would see the id twice
+  fs.cpSync(path.join(root, STORY), path.join(root, 'content/third-story'), { recursive: true });
+  edit(root, 'content/third-story/story.yaml', 'id: settlement-of-iceland', 'id: third-story');
+  assert.throws(() => zones({ root, share: 'settlement-of-iceland/island', replace: ['second-story/iceland'], log: quiet }), /third-story\/island draws a zone of the id island too/);
+  fs.rmSync(path.join(root, 'content/third-story'), { recursive: true });
+  zones({ root, share: 'settlement-of-iceland/island', replace: ['second-story/iceland'], log: quiet });
+  assert.ok(fs.existsSync(path.join(root, 'content/second-story/pages/020-althing/zones.yaml')));
+  await make(root);
+  assert.equal(bundleOf(root, 'second-story').zones.iceland.family, 'settled');
+});
+
+test('a zones.yaml entry of an id already taken is reported, and a failed entry leaves no false loop behind', async () => {
+  const root = copy();
+  fs.writeFileSync(path.join(root, STORY, 'shared/zones.yaml'), 'island: { zone: southwest, name: Renamed }\n');
+  await assert.rejects(make(root), /shared\/zones\.yaml: zone "island" is defined twice/);
+  fs.writeFileSync(path.join(root, STORY, 'shared/zones.yaml'), 'a: { zone: island, family: nope }\nb: { zone: a }\n');
+  const problems = check({ root, story: 'settlement-of-iceland', log: quiet });
+  assert.ok(problems.some(p => /zone "a" uses unknown family "nope"/.test(p)), problems.join('\n'));
+  assert.ok(!problems.some(p => /takes its outline from itself/.test(p)), problems.join('\n'));
+});
+
+test('a strict build names the way out of a copy of a shared zone, and a zone file that is not JSON is named', async () => {
+  const root = copy(), shared = 'content/shared/zones/island-930';
+  fs.mkdirSync(path.join(root, shared), { recursive: true });
+  const island = JSON.parse(fs.readFileSync(path.join(root, ISLAND), 'utf8'));
+  fs.writeFileSync(path.join(root, shared, 'zone.geojson'), JSON.stringify({ ...island, properties: { family: 'settled', name: 'Iceland', clip: ['Iceland'] } }));
+  await assert.rejects(make(root, { strict: true }), /name the shared zone island-930 in place of settlement-of-iceland\/island, or give settlement-of-iceland\/island a zones\.yaml entry \{ zone: island-930 \}/);
+  fs.writeFileSync(path.join(root, shared, 'zone.geojson'), '{ type: Feature }');
+  assert.throws(() => zones({ root, log: quiet }), /content\/shared\/zones\/island-930\/zone\.geojson: /);
+});
+
+test('harita image tells two pages by their query apart, refuses a file without an image extension, and rehash names a folder without image.yaml', () => {
+  const root = copy(), page = id => `https://collections.example.org/object.php?id=${id}`;
+  const sword = image({ root, file: svgFile(root, 'sword'), name: 'sword', caption: 'A sword', source: page(101), story: 'settlement-of-iceland', log: quiet });
+  const helmet = image({ root, file: svgFile(root, 'helmet'), name: 'helmet', caption: 'A helmet', source: page(202), log: quiet });
+  assert.notEqual(sword, helmet);
+  fs.writeFileSync(path.join(root, 'noext'), 'x');
+  assert.throws(() => image({ root, file: path.join(root, 'noext'), name: 'thing', caption: 'x', log: quiet }), /an image is a \.jpg, \.jpeg, \.png, \.webp, \.svg or \.gif file/);
+  fs.mkdirSync(path.join(root, 'content/shared/images/bare-a1b2c3'));
+  fs.writeFileSync(path.join(root, 'content/shared/images/bare-a1b2c3/image.svg'), '<svg/>');
+  const lines = [];
+  rehash({ root, log: l => lines.push(l) });
+  assert.ok(lines.includes('content/shared/images/bare-a1b2c3: image.yaml is missing'));
+});
+
+test('a strict build checks the images it ships, and a story built alone keeps the shared images of the others', async () => {
+  const root = copy();
+  secondStory(root);
+  for (const f of ['pages/020-althing/zones/island.geojson', 'pages/010-landnam/zones/southwest.geojson']) redraw(root, `content/second-story/${f}`);
+  const shared = image({ root, file: svgFile(root, 'plain'), name: 'plain', caption: 'The plain', log: quiet });
+  append(root, 'content/second-story/pages/010-landnam/text/en.md', `@image ${shared}`);
+  // an image only a marker no page shows: not shipped, so neither its hash nor its caption counts
+  const hidden = image({ root, file: svgFile(root, 'hof'), name: 'hof', caption: 'The hof', story: 'settlement-of-iceland', log: quiet });
+  fs.appendFileSync(path.join(root, STORY, 'shared/markers.yaml'), `hof:\n  lnglat: [-21.1, 64.3]\n  label: Hof\n  image: ${hidden}\n`);
+  edit(root, `${STORY}/shared/images/${hidden}/image.yaml`, /^sha256:.*\n/m, '');
+  await make(root, { strict: true });
+  assert.ok(fs.existsSync(path.join(root, `dist/images/${shared}.svg`)));
+  await make(root, { story: 'settlement-of-iceland' });
+  assert.ok(fs.existsSync(path.join(root, `dist/images/${shared}.svg`)), 'the second story still shows it');
+  // dist/images/ is the folder every story shares, so no story takes its name
+  edit(root, `${STORY}/story.yaml`, 'id: settlement-of-iceland', 'id: images');
+  await assert.rejects(make(root), /the story id "images" names the folder dist\/images\/ that holds what every story shares/);
+});
+
+test('an inline text without the default language names its file, and --like keeps the rest of the cache', async () => {
+  const root = copy();
+  edit(root, `${BATTLE}/battle.yaml`, 'name: { en: "Fight at the Althing" }', 'name: { is: "Bardaginn á Alþingi" }');
+  await assert.rejects(make(root), /content\/shared\/battles\/althing-1012\/battle\.yaml: battle\.name: no "en" text, write it in en or set default_language to the language it is in/);
+  edit(root, `${BATTLE}/battle.yaml`, 'name: { is: "Bardaginn á Alþingi" }', 'name: { en: "Fight at the Althing" }');
+  secondStory(root);
+  redraw(root, 'content/second-story/pages/020-althing/zones/island.geojson');
+  zones({ root, log: quiet });
+  const cache = () => Object.keys(JSON.parse(fs.readFileSync(path.join(root, '.cache/harita/zone-compare.json'), 'utf8')).overlap).length;
+  const before = cache();
+  fs.copyFileSync(path.join(root, ISLAND), path.join(root, 'new.geojson'));
+  redraw(root, 'new.geojson', 0.004);
+  zones({ root, like: path.join(root, 'new.geojson'), log: quiet });
+  assert.ok(before > 0 && cache() >= before, `${before} overlaps cached, ${cache()} after --like`);
+});
+
+// --- what the final 0.4.0 review found ---
+test("a broken zone file in another story leaves a story built alone working, and a zones.yaml entry keeps its own clip", async () => {
+  const root = copy();
+  secondStory(root);
+  for (const f of ['pages/020-althing/zones/island.geojson', 'pages/010-landnam/zones/southwest.geojson']) redraw(root, `content/second-story/${f}`);
+  fs.writeFileSync(path.join(root, 'content/second-story/pages/010-landnam/zones/southwest.geojson'), '{ "type": "Feature", "properties": {} ');
+  const lines = [];
+  await make(root, { story: 'settlement-of-iceland', log: l => lines.push(l) });
+  assert.ok(lines.some(l => /^warning: content\/second-story\/pages\/010-landnam\/zones\/southwest\.geojson: .*, left out of the zone comparison$/.test(l)), lines.join('\n'));
+  await assert.rejects(make(root), /second-story\/pages\/010-landnam\/zones\/southwest\.geojson/);
+  fs.rmSync(path.join(root, 'content/second-story'), { recursive: true });
+  // the first story clips its island to two countries, the second story knows one of them and draws its island without a clip
+  secondStory(root);
+  edit(root, `${STORY}/story.yaml`, 'countries: [Iceland]', 'countries: [Iceland, Greenland]');
+  edit(root, ISLAND, '"clip": ["Iceland"]', '"clip": ["Iceland", "Greenland"]');
+  edit(root, 'content/second-story/pages/020-althing/zones/island.geojson', ', "clip": ["Iceland"]', '');
+  zones({ root, share: 'settlement-of-iceland/island', replace: ['second-story/island', 'second-story/island'], log: quiet });
+  assert.deepEqual(check({ root, story: 'second-story', log: quiet }), []);
+});
+
+test('--share reads every catalogue before it writes, and harita image checks its fields and its folder first', () => {
+  const root = copy();
+  secondStory(root);
+  fs.mkdirSync(path.join(root, STORY, 'i18n'));
+  fs.writeFileSync(path.join(root, STORY, 'i18n/tr.yaml'), 'zones.island.name: [unclosed\n');
+  assert.throws(() => zones({ root, share: 'settlement-of-iceland/island', replace: ['second-story/island'], log: quiet }), /settlement-of-iceland\/i18n\/tr\.yaml: /);
+  assert.ok(fs.existsSync(path.join(root, ISLAND)) && !fs.existsSync(path.join(root, 'content/shared/zones/island')));
+  const file = svgFile(root, 'farm');
+  assert.throws(() => image({ root, file, name: 'farm', caption: 'x', source: 'commons.wikimedia.org/wiki/File:Farm.jpg', log: quiet }), /source: Invalid URL/);
+  assert.ok(!fs.existsSync(path.join(root, 'content/shared/images')));
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'harita-empty-'));
+  assert.throws(() => image({ root: empty, file, name: 'farm', caption: 'x', log: quiet }), /content\/: no story\.yaml found, run harita image from a content project/);
+  assert.ok(!fs.existsSync(path.join(empty, 'content')));
 });
